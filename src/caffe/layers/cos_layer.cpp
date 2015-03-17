@@ -28,8 +28,7 @@ void CosLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     Dtype* bottom_diff = bottom[0]->mutable_cpu_diff();
     const int count = bottom[0]->count();
     for (int i = 0; i < count; ++i) {
-      const Dtype cos_x = top_data[i];
-      bottom_diff[i] = -sin(bottom_data[i]);
+      bottom_diff[i] = -top_diff[i] * sin(bottom_data[i]);
     }
   }
 }

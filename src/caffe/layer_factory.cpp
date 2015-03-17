@@ -111,6 +111,24 @@ shared_ptr<Layer<Dtype> > GetSigmoidLayer(const LayerParameter& param) {
 
 REGISTER_LAYER_CREATOR(Sigmoid, GetSigmoidLayer);
 
+
+// Get cos layer according to engine.
+template <typename Dtype>
+shared_ptr<Layer<Dtype> > GetCosLayer(const LayerParameter& param) {
+  CosParameter_Engine engine = param.cos_param().engine();
+  if (engine == CosParameter_Engine_DEFAULT) {
+    engine = CosParameter_Engine_CAFFE;
+  }
+  if (engine == CosParameter_Engine_CAFFE) {
+    return shared_ptr<Layer<Dtype> >(new CosLayer<Dtype>(param));
+  } else {
+    LOG(FATAL) << "Layer " << param.name() << " has unknown engine.";
+  }
+}
+
+REGISTER_LAYER_CREATOR(Cos, GetCosLayer);
+
+
 // Get softmax layer according to engine.
 template <typename Dtype>
 shared_ptr<Layer<Dtype> > GetSoftmaxLayer(const LayerParameter& param) {

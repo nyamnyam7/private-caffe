@@ -35,7 +35,6 @@ template <typename Dtype>
 __global__ void CosBackward(const int n, const Dtype* in_diff,
     const Dtype* in_data, Dtype* out_diff) {
   CUDA_KERNEL_LOOP(index, n) {
-    const Dtype Cos_x = out_data[index];
     out_diff[index] = - in_diff[index] * sin(in_data[index]);
   }
 }
