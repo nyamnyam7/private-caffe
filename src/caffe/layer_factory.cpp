@@ -192,6 +192,23 @@ shared_ptr<Layer<Dtype> > GetPythonLayer(const LayerParameter& param) {
 REGISTER_LAYER_CREATOR(Python, GetPythonLayer);
 #endif
 
+
+// Get maxout layer according to engine.
+template <typename Dtype>
+shared_ptr<Layer<Dtype> > GetMaxoutLayer(const LayerParameter& param) {
+  MaxoutParameter_Engine engine = param.maxout_param().engine();
+  if (engine == MaxoutParameter_Engine_DEFAULT) {
+    engine = MaxoutParameter_Engine_CAFFE;
+  }
+  if (engine == MaxoutParameter_Engine_CAFFE) {
+    return shared_ptr<Layer<Dtype> >(new MaxoutLayer<Dtype>(param));
+  } else {
+    LOG(FATAL) << "Layer " << param.name() << " has unknown engine.";
+  }
+}
+
+REGISTER_LAYER_CREATOR(Maxout, GetMaxoutLayer);
+
 // Layers that use their constructor as their default creator should be
 // registered in their corresponding cpp files. Do not register them here.
 }  // namespace caffe
