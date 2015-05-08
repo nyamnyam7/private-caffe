@@ -193,6 +193,24 @@ REGISTER_LAYER_CREATOR(Python, GetPythonLayer);
 #endif
 
 
+// Get nms layer according to engine.
+template <typename Dtype>
+shared_ptr<Layer<Dtype> > GetNMSLayer(const LayerParameter& param) {
+  NMSParameter_Engine engine = param.nms_param().engine();
+  if (engine == NMSParameter_Engine_DEFAULT) {
+    engine = NMSParameter_Engine_CAFFE;
+  }
+  if (engine == NMSParameter_Engine_CAFFE) {
+    return shared_ptr<Layer<Dtype> >(new NMSLayer<Dtype>(param));
+  } else {
+    LOG(FATAL) << "Layer " << param.name() << " has unknown engine.";
+  }
+}
+
+REGISTER_LAYER_CREATOR(NMS, GetNMSLayer);
+
+
+
 // Get maxout layer according to engine.
 template <typename Dtype>
 shared_ptr<Layer<Dtype> > GetMaxoutLayer(const LayerParameter& param) {
