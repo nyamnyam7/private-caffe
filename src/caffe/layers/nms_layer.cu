@@ -35,10 +35,11 @@ __global__ void NMSForward(const int nthreads, const Dtype* bottom_data,
     {
         for (int i=istart; i<iend; i++){
             for (int j=jstart; j<jend; j++){
-                is_maximum &= ( rel[i * width + j] < curval );
+                if ( rel[i * width + j] > curval ) is_maximum = false;
             }
         }
     }
+    else is_maximum = false;
 
     if (is_maximum) {
         top_data[index] = bottom_data[index];

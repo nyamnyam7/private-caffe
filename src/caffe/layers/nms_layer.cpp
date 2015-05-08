@@ -63,6 +63,7 @@ void NMSLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
   else  mask = mask_.mutable_cpu_data();
 
   caffe_set(top_count, Dtype(0), mask);
+  caffe_set(top_count, Dtype(0), top_data);
   // The main loop
 
   for (int n = 0; n < bottom[0]->num(); ++n) {
@@ -72,11 +73,11 @@ void NMSLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
           for (int i=kernel_h_; i<=height_-kernel_h_; i+=(kernel_h_+1)) {
               for (int j=kernel_w_; j<=width_-kernel_w_; j+=(kernel_w_+1)) {
                   int mi = i, mj = j;
-                  float val_mi_mj = bottom_data[mi * width_ + mj];
+                  Dtype val_mi_mj = bottom_data[mi * width_ + mj];
 
                   for (int i2 = i; i2<i+kernel_h_; i2++) {
                       for (int j2 = j; j2<j+kernel_w_; j2++) {
-                          float val_i2_j2 = bottom_data[i2 * width_ + j2];
+                          Dtype val_i2_j2 = bottom_data[i2 * width_ + j2];
                           if (val_i2_j2 > val_mi_mj) {
                               mi = i2;
                               mj = j2;
@@ -86,9 +87,9 @@ void NMSLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
                   }
          
                   bool failflag = false;
-                  for (int i2=mi-kernel_h_; i2<mi+kernel_h_; i2++) {
+                  for (int i2=mi-kernel_h_; i2<=mi+kernel_h_; i2++) {
                       for (int j2=mj-kernel_w_; j2<=mj+kernel_w_; j2++) {
-                          float val_i2_j2 = bottom_data[i2 * width_ + j2];
+                          Dtype val_i2_j2 = bottom_data[i2 * width_ + j2];
                           if (val_i2_j2 > val_mi_mj &&
                               !(i <= i2 && i2 <= i+kernel_h_ &&  j <= j2 && j2 <= j+kernel_w_)) {
                               failflag = true;
