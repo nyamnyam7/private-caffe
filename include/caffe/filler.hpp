@@ -5,6 +5,7 @@
 #ifndef CAFFE_FILLER_HPP
 #define CAFFE_FILLER_HPP
 
+#include <utility>
 #include <string>
 
 #include "caffe/blob.hpp"
@@ -12,6 +13,9 @@
 #include "caffe/proto/caffe.pb.h"
 #include "caffe/syncedmem.hpp"
 #include "caffe/util/math_functions.hpp"
+#include "caffe/util/io.hpp"
+#include "hdf5.h"
+#include "hdf5_hl.h"
 
 namespace caffe {
 
@@ -157,6 +161,57 @@ class XavierFiller : public Filler<Dtype> {
 };
 
 
+// XXX Create by nyamnyam7@gmail.com
+// custom filler that reads initial params from hdf5 file 
+
+
+template <typename Dtype>
+class HDF5Filler : public Filler<Dtype>{
+ public:
+      const std::string& filename_;
+      const std::string& varname_;
+
+  explicit HDF5Filler(const FillerParameter& param)
+       : Filler<Dtype>(param), filename_(param.hdf5path()), varname_(param.hdf5name()) {}
+  virtual void Fill(Blob<Dtype>* blob)
+  {
+      CHECK(blob->count());
+      DLOG(INFO) << "Loading HDF5 to initialize weights: " << filename_.c_str();
+      hid_t file_id = H5Fopen(filename_.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+      if (file_id < 0) {
+          LOG(FATAL) << "Failed opening HDF5 file: " << filename_.c_str();
+      }
+
+      CHECK(H5LTfind_dataset(file_id, varname_.c_str()))
+        << "Failed to find HDF5 intial weight " << varname_.c_str();
+
+      int ndims;
+      herr_t status = H5LTget_dataset_ndims(file_id, varname_.c_str(), &ndims);
+      CHECK_GE(status, 0) << "Failed to get dataset ndims for " << varname_.c_str();
+      CHECK_LE(ndims, 4) << "Weights can have maximum 4 dims: yours = " << ndims;
+
+      std::vector<hsize_t> dims(ndims);
+      H5T_class_t class_;
+      status = H5LTget_dataset_info(
+          file_id, varname_.c_str(), dims.data(), &class_, NULL);
+      CHECK_GE(status, 0) << "Failed to get dataset info for " << varname_;
+      CHECK_EQ(class_, H5T_FLOAT) << "Expected float or double data";
+
+      vector<int> blob_dims(std::max(4, static_cast<int>(dims.size())));
+      for (int i = 0; i < dims.size(); ++i) {
+        blob_dims[i] = dims[i];
+        CHECK_EQ(dims[i], blob->shape()[i]) << "HDF5 and the target blob has the different shape: it should be "
+          << blob->shape_string();
+      }
+
+      hdf5_load_nd_dataset<Dtype>(file_id, varname_.c_str(), 0, 4, blob);
+
+      status = H5Fclose(file_id);
+      CHECK_GE(status, 0) << "Failed to close HDF5 file: " << filename_.c_str();
+  }
+};
+
+
 /**
  * @brief Get a specific filler from the specification given in FillerParameter.
  *
@@ -176,6 +231,8 @@ Filler<Dtype>* GetFiller(const FillerParameter& param) {
     return new UniformFiller<Dtype>(param);
   } else if (type == "xavier") {
     return new XavierFiller<Dtype>(param);
+  } else if (type == "hdf5") {
+    return new HDF5Filler<Dtype>(param);
   } else {
     CHECK(false) << "Unknown filler name: " << param.type();
   }

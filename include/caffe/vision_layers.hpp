@@ -408,7 +408,11 @@ class NMSLayer: public Layer<Dtype> {
       const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom);
   
   int height_, width_, channels_;
-  int kernel_h_, kernel_w_;
+  int kernel_top_, kernel_right_;
+  int kernel_bottom_, kernel_left_;
+  float activated_coeff_;
+  float unactivated_coeff_;
+  bool no_backprop_;
   Blob<Dtype> mask_;
 };
 

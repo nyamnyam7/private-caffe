@@ -18,14 +18,23 @@ void NMSLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
   NMSParameter nms_param = this->layer_param_.nms_param();
 
-  CHECK(nms_param.has_kernel_w()) << "width should be defined";
-  CHECK(nms_param.has_kernel_h()) << "height should be defined";
-  kernel_w_ = nms_param.kernel_w();
-  kernel_h_ = nms_param.kernel_h();
+  CHECK(nms_param.has_kernel_left()) << "kernel_left should be defined";
+  CHECK(nms_param.has_kernel_right()) << "kernel_right should be defined";
+  CHECK(nms_param.has_kernel_top()) << "kernel_top should be defined";
+  CHECK(nms_param.has_kernel_bottom()) << "kernel_bottom should be defined";
+  kernel_top_ = nms_param.kernel_top();
+  kernel_bottom_ = nms_param.kernel_bottom();
+  kernel_left_ = nms_param.kernel_left();
+  kernel_right_ = nms_param.kernel_right();
+  activated_coeff_ = nms_param.activated_coeff();
+  unactivated_coeff_ = nms_param.unactivated_coeff();
+
+  no_backprop_ = nms_param.no_backprop() == 1;
   
-  CHECK_GT(kernel_h_, 0) << "height should be larger than 0";
-  CHECK_GT(kernel_w_, 0) << "width should be larger than 0";
-    
+  CHECK_GT(kernel_top_, -1) << "height should be larger than -1";
+  CHECK_GT(kernel_left_, -1) << "width should be larger than -1";
+  CHECK_GT(kernel_right_, -1) << "height should be larger than -1";
+  CHECK_GT(kernel_bottom_, -1) << "width should be larger than -1";
 }
 
 
@@ -62,57 +71,88 @@ void NMSLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
   if (use_top_mask) mask = top[1]->mutable_cpu_data();
   else  mask = mask_.mutable_cpu_data();
 
-  caffe_set(top_count, Dtype(0), mask);
-  caffe_set(top_count, Dtype(0), top_data);
+  caffe_set(top_count, Dtype(unactivated_coeff_), mask);
   // The main loop
+  
+  int hstep = ((kernel_top_ > kernel_bottom_)?kernel_top_:kernel_bottom_) + 1;
+  int vstep = ((kernel_left_ > kernel_right_)?kernel_left_:kernel_right_) + 1;
 
   for (int n = 0; n < bottom[0]->num(); ++n) {
       for (int c=0; c < channels_; c++){
-          // Slightly inferior implementation of
+          // Inferior implementation of
           // block algorithm in "Efficient non-maximum suppression"
-          for (int i=kernel_h_; i<=height_-kernel_h_; i+=(kernel_h_+1)) {
-              for (int j=kernel_w_; j<=width_-kernel_w_; j+=(kernel_w_+1)) {
-                  int mi = i, mj = j;
+          for (int i=kernel_top_; i<height_-kernel_bottom_; i+=vstep) {
+              for (int j=kernel_left_; j<width_-kernel_right_; j+=hstep) {
+                  int mi = i, mj = j; // maximum
+                  int mmi = i, mmj = j; // minimum
                   Dtype val_mi_mj = bottom_data[mi * width_ + mj];
+                  Dtype val_mmi_mmj = bottom_data[mmi * width_ + mmj];
 
-                  for (int i2 = i; i2<i+kernel_h_; i2++) {
-                      for (int j2 = j; j2<j+kernel_w_; j2++) {
+                  for (int i2 = i; i2<=i+kernel_bottom_; i2++) {
+                      for (int j2 = j; j2<=j+kernel_right_; j2++) {
                           Dtype val_i2_j2 = bottom_data[i2 * width_ + j2];
                           if (val_i2_j2 > val_mi_mj) {
                               mi = i2;
                               mj = j2;
                               val_mi_mj = val_i2_j2;
                           }
+                          if (val_i2_j2 < val_mmi_mmj) {
+                              mmi = i2;
+                              mmj = j2;
+                              val_mmi_mmj = val_i2_j2;
+                          }
                       }
                   }
          
-                  bool failflag = false;
-                  for (int i2=mi-kernel_h_; i2<=mi+kernel_h_; i2++) {
-                      for (int j2=mj-kernel_w_; j2<=mj+kernel_w_; j2++) {
+                  bool max_failflag = false;
+                  bool min_failflag = false;
+
+                  for (int i2=mi-kernel_top_; i2<=mi+kernel_bottom_; i2++) {
+                      for (int j2=mj-kernel_left_; j2<=mj+kernel_right_; j2++) {
                           Dtype val_i2_j2 = bottom_data[i2 * width_ + j2];
-                          if (val_i2_j2 > val_mi_mj &&
-                              !(i <= i2 && i2 <= i+kernel_h_ &&  j <= j2 && j2 <= j+kernel_w_)) {
-                              failflag = true;
+                          if (val_i2_j2 > val_mi_mj) {
+                              max_failflag = true;
                               break;
                           }
-                          if (failflag) break;
+                          if (max_failflag) break;
                       }
-                      if (failflag) break;
+                      if (max_failflag) break;
+                  }
+                  
+                  for (int i2=mmi-kernel_top_; i2<=mmi+kernel_bottom_; i2++) {
+                      for (int j2=mmj-kernel_left_; j2<=mmj+kernel_right_; j2++) {
+                          Dtype val_i2_j2 = bottom_data[i2 * width_ + j2];
+                          if (val_i2_j2 < val_mmi_mmj) {
+                              min_failflag = true;
+                              break;
+                          }
+                          if (min_failflag) break;
+                      }
+                      if (min_failflag) break;
                   }
          
-                  if (!failflag)
+                  if (!max_failflag)
                   {
-                      top_data[mi * width_ + mj] = val_mi_mj;
-                      mask[mi * width_ + mj] = 1.0;
+                      mask[mi * width_ + mj] = activated_coeff_;
+                  }
+                  if (!min_failflag)
+                  {
+                      mask[mmi * width_ + mmj] = activated_coeff_;
                   }
               }
+
           }
+
+          for (int i=0; i<bottom[0]->offset(0, 1); i++)
+              top_data[i] = bottom_data[i] * mask[i];
 
           bottom_data += bottom[0]->offset(0,1);
           top_data += top[0]->offset(0,1);
           mask += top[0]->offset(0,1);
       }
   }
+
+
 
 }
 
@@ -137,15 +177,18 @@ void NMSLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     mask = mask_.cpu_data();
   }
 
-  for (int n = 0; n < top[0]->num(); ++n) {
-    const int size = top[0]->offset(1, 0);
-    for (int i = 0; i < size; ++i) {
-        if (mask[i] > 0) bottom_diff[i] = top_diff[i];
+  if (!no_backprop_)
+  {
+    for (int n = 0; n < top[0]->num(); ++n) {
+      const int size = top[0]->offset(1, 0);
+      for (int i = 0; i < size; ++i) {
+        bottom_diff[i] = mask[i] * top_diff[i];
+      }
+ 
+      bottom_diff += bottom[0]->offset(1,0);
+      top_diff += top[0]->offset(1,0);
+      mask += top[0]->offset(1,0);
     }
-
-    bottom_diff += bottom[0]->offset(1,0);
-    top_diff += top[0]->offset(1,0);
-    mask += top[0]->offset(1,0);
   }
 }
 

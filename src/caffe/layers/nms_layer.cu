@@ -12,7 +12,9 @@ namespace caffe {
 template <typename Dtype>
 __global__ void NMSForward(const int nthreads, const Dtype* bottom_data,
     const int num, const int channels, const int height, const int width, 
-    const int kernel_h, const int kernel_w,
+    const int kernel_top, const int kernel_bottom,
+    const int kernel_left, const int kernel_right,
+    Dtype activated_coeff, Dtype unactivated_coeff,
     Dtype* top_data,
     Dtype* mask) {
   // Iterate over top_data
@@ -22,33 +24,45 @@ __global__ void NMSForward(const int nthreads, const Dtype* bottom_data,
     int n = index / width / height / channels;
     int c = (index / width / height) % channels;
 
-    int jstart = w - kernel_w;
-    int jend = w + kernel_w+1;
-    int istart = h - kernel_h;
-    int iend = h + kernel_h+1;
+    int jstart = w - kernel_left;
+    int jend = w + kernel_right+1;
+    int istart = h - kernel_top;
+    int iend = h + kernel_bottom+1;
     
     Dtype curval = bottom_data[index];
     bool is_maximum = true;
+    bool is_minimum = true;
     // extremely inefficient implementation of non-maximum suprression
+
     const Dtype* rel = bottom_data + (n * channels + c) * height * width;
-    if (jstart > 0 && jend <= width && istart > 0 && iend <= height)
+    if (jstart >= 0 && jend <= width && istart >= 0 && iend <= height)
     {
         for (int i=istart; i<iend; i++){
             for (int j=jstart; j<jend; j++){
-                if ( rel[i * width + j] > curval ) is_maximum = false;
+                if ( rel[i * width + j] > curval) is_maximum=false;
+                if ( rel[i * width + j] < curval) is_minimum=false;
+                if ( rel[i * width + j] == curval && ( h > i || w > j ) )
+                {
+                    is_maximum = false;
+                    is_minimum = false;
+                }
             }
         }
     }
-    else is_maximum = false;
+    else
+    {
+        is_maximum = false;
+        is_minimum = false;
+    }
 
-    if (is_maximum) {
-        top_data[index] = bottom_data[index];
-        mask[index] = 1.0;
+    if (is_maximum || is_minimum) {
+        top_data[index] = activated_coeff * bottom_data[index];
+        mask[index] = activated_coeff;
     }
     else
     {
-        top_data[index] = 0.0;
-        mask[index] = 0.0;
+        top_data[index] = unactivated_coeff * bottom_data[index];
+        mask[index] = unactivated_coeff;
     }
   }
 }
@@ -72,7 +86,10 @@ void NMSLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
   // NOLINT_NEXT_LINE(whitespace/operators)
   NMSForward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
       count, bottom_data, bottom[0]->num(), channels_,
-      height_, width_, kernel_h_, kernel_w_,
+      height_, width_,
+      kernel_top_, kernel_bottom_,
+      kernel_left_, kernel_right_,
+      activated_coeff_, unactivated_coeff_,
       top_data, mask);
   CUDA_POST_KERNEL_CHECK;
 }
@@ -85,8 +102,7 @@ __global__ void NMSBackward(const int nthreads,
   CUDA_KERNEL_LOOP(index, nthreads) {
     // find out the local index
     // find out the local offset
-    if (mask[index] > 0) bottom_diff[index] = top_diff[index];
-    else bottom_diff[index] = 0.0;
+    bottom_diff[index] = top_diff[index] * mask[index];
   }
 }
 
@@ -110,8 +126,11 @@ void NMSLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
     mask = mask_.gpu_data();
   }
   // NOLINT_NEXT_LINE(whitespace/operators)
-  NMSBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
-      count, top_diff, mask, bottom_diff);
+  if (!no_backprop_)
+  {
+      NMSBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+          count, top_diff, mask, bottom_diff);
+  }
   CUDA_POST_KERNEL_CHECK;
 }
 
