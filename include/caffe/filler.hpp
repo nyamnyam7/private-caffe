@@ -199,8 +199,14 @@ class HDF5Filler : public Filler<Dtype>{
 
       vector<int> blob_dims(std::max(4, static_cast<int>(dims.size())));
       for (int i = 0; i < dims.size(); ++i) {
+        LOG(INFO) << "hdf5_data_dim[" << i << "]=" << dims[i];
+      }
+      for (int i = 0; i < blob->shape().size(); ++i) {
+        LOG(INFO) << "blob_dim[" << i << "]=" << blob->shape()[i];
+      }
+      for (int i = 0; i < dims.size(); ++i) {
         blob_dims[i] = dims[i];
-        CHECK_EQ(dims[i], blob->shape()[i]) << "HDF5 and the target blob has the different shape: it should be "
+        CHECK_EQ(dims[i], blob->shape()[i]) << "HDF5 and the target blob has the different shape at dim "<< i <<" : it should be "
           << blob->shape_string();
       }
 
