@@ -759,8 +759,6 @@ message SigmoidParameter {
   optional Engine engine = 1 [default = DEFAULT];
 }
 
-<<<<<<< HEAD
-
 message CosParameter {
   enum Engine {
     DEFAULT = 0;
@@ -796,9 +794,6 @@ message NMSParameter {
   optional Engine engine = 7 [default = DEFAULT];
 }
 
-// Message that stores parameters used by SliceLayer
-=======
->>>>>>> 2c69258d510d8e7d412d2249c3e057870f141871
 message SliceParameter {
   // The axis along which to slice -- may be negative to index from the end
   // (e.g., -1 for the last axis).
