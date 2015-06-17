@@ -192,6 +192,8 @@ void Solver<Dtype>::Step(int iters) {
       TestAll();
     }
 
+    HookBeforeForward();
+
     const bool display = param_.display() && iter_ % param_.display() == 0;
     net_->set_debug_info(display && param_.debug_info());
     // accumulate the loss and gradient
@@ -232,7 +234,12 @@ void Solver<Dtype>::Step(int iters) {
         }
       }
     }
+
+    HookBeforeUpdate();
+
     ApplyUpdate();
+
+    HookAfterUpdate();
 
     // Increment the internal iter_ counter -- its value should always indicate
     // the number of times the weights have been updated.

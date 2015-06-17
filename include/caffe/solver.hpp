@@ -38,6 +38,10 @@ class Solver {
   }
   int iter() { return iter_; }
 
+  virtual void HookBeforeForward(){};
+  virtual void HookBeforeUpdate(){};
+  virtual void HookAfterUpdate(){};
+
  protected:
   // Make and apply the update value for the current iteration.
   virtual void ApplyUpdate() = 0;
