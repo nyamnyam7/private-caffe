@@ -58,6 +58,43 @@ __global__ void MaxoutForward(const int nthreads, const Dtype* bottom_data,
   }
 }
 
+template <typename Dtype>
+__global__ void MinoutForward(const int nthreads, const Dtype* bottom_data,
+    const int num, const int channels, const int height, const int width, 
+    const int pooled_channels,
+    const int chgroup_sz,
+    Dtype* top_data,
+    int* mask, Dtype* top_mask) {
+  // Iterate over top_data
+  CUDA_KERNEL_LOOP(index, nthreads) {
+    int w = index % width;
+    int h = (index / width) % height;
+    int pn = index / width / height / pooled_channels;
+    int n = pn;
+    int pc = (index / width / height) % pooled_channels;
+
+    int cstart = pc * chgroup_sz; 
+    int cend   = cstart + chgroup_sz; 
+
+    Dtype maxval = -FLT_MAX;
+    int maxidx = -1;
+
+    bottom_data += n * channels * height * width;
+    for (int c = cstart; c < cend; ++c) {
+      if (bottom_data[ (c * height + h) * width + w] < maxval) { // inequlaity changed
+        maxidx =  (c * height + h) * width + w;
+        maxval = bottom_data[maxidx];
+      }
+    }
+    top_data[index] = maxval;
+    if (mask) {
+      mask[index] = maxidx;
+    } else {
+      top_mask[index] = maxidx;
+    }
+  }
+}
+
 
 template <typename Dtype>
 void MaxoutLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
@@ -76,10 +113,16 @@ void MaxoutLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     mask = max_idx_.mutable_gpu_data();
   }
   // NOLINT_NEXT_LINE(whitespace/operators)
-  MaxoutForward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
-      count, bottom_data, bottom[0]->num(), channels_,
-      height_, width_, pooled_channels_, chgroup_sz_,
-      top_data, mask, top_mask);
+  if (!minout_)
+    MaxoutForward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+        count, bottom_data, bottom[0]->num(), channels_,
+        height_, width_, pooled_channels_, chgroup_sz_,
+        top_data, mask, top_mask);
+  else 
+    MinoutForward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+        count, bottom_data, bottom[0]->num(), channels_,
+        height_, width_, pooled_channels_, chgroup_sz_,
+        top_data, mask, top_mask);
   CUDA_POST_KERNEL_CHECK;
 }
 

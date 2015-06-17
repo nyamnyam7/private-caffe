@@ -771,6 +771,7 @@ message CosParameter {
 // Message that stores parameters used by MaxoutLayer
 message MaxoutParameter {
   optional uint32 chgroup_sz = 1 [default = 1]; 
+  optional bool minout = 3 [default = false]; 
 
   enum Engine {
     DEFAULT = 0;

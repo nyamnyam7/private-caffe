@@ -20,6 +20,7 @@ void MaxoutLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
 
   CHECK(maxout_param.has_chgroup_sz()) << "chgroup_sz should be defined";
   chgroup_sz_ = maxout_param.chgroup_sz();
+  minout_ = maxout_param.minout();
   
   CHECK_GT(chgroup_sz_, 0) << "chgroup_sz should be larger than 0";
     
@@ -81,13 +82,23 @@ void MaxoutLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
                   for (int c = cstart; c < cend; c++) {
                       const int index      = c  * width_ * height_ + h * width_ + w; 
                       const int pool_index = pc * width_ * height_ + h * width_ + w; 
-
-                      if (bottom_data[index] > top_data[pool_index]) {
-                          top_data[pool_index] = bottom_data[index];
-                          if (use_top_mask) {
-                              top_mask[pool_index] = static_cast<Dtype>(index);
-                          } else {
-                              mask[pool_index] = index;
+                      if (!minout_) {
+                          if (bottom_data[index] > top_data[pool_index]) {
+                              top_data[pool_index] = bottom_data[index];
+                              if (use_top_mask) {
+                                  top_mask[pool_index] = static_cast<Dtype>(index);
+                              } else {
+                                  mask[pool_index] = index;
+                              }
+                          }
+                      } else {
+                          if (bottom_data[index] < top_data[pool_index]) {
+                              top_data[pool_index] = bottom_data[index];
+                              if (use_top_mask) {
+                                  top_mask[pool_index] = static_cast<Dtype>(index);
+                              } else {
+                                  mask[pool_index] = index;
+                              }
                           }
                       }
                   }
