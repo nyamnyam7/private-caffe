@@ -70,7 +70,11 @@ void MaxoutLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     mask = max_idx_.mutable_cpu_data();
     caffe_set(top_count, -1, mask);
   }
-  caffe_set(top_count, Dtype(-FLT_MAX), top_data);
+  if (!minout_)
+    caffe_set(top_count, Dtype(-FLT_MAX), top_data);
+  else
+    caffe_set(top_count, Dtype(FLT_MAX), top_data);
+
   // The main loop
   for (int n = 0; n < bottom[0]->num(); ++n) {
       for (int pc = 0; pc < pooled_channels_; ++pc) {

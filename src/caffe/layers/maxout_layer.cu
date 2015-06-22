@@ -76,7 +76,7 @@ __global__ void MinoutForward(const int nthreads, const Dtype* bottom_data,
     int cstart = pc * chgroup_sz; 
     int cend   = cstart + chgroup_sz; 
 
-    Dtype maxval = -FLT_MAX;
+    Dtype maxval = FLT_MAX;
     int maxidx = -1;
 
     bottom_data += n * channels * height * width;
