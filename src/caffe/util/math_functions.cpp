@@ -394,4 +394,185 @@ void caffe_cpu_scale<double>(const int n, const double alpha, const double *x,
   cblas_dscal(n, alpha, y, 1);
 }
 
+template <typename Dtype, typename Op>
+void xopy_broadcast(const int dima[4], const int dimb[4], const Dtype* x, const Dtype* y, Dtype* z)
+{
+  int n = 1;
+  int indexa=0, indexb=0;
+  int broadcast_dim[4];
+  Op op;
+
+  for (int i=0; i<4; i++) broadcast_dim[i] = (dimb[i] == 1);
+  for (int i=0; i<4; i++) n *= dima[i];
+
+  for (int i=0; i<n; i++)
+  {
+    z[indexa] = op(x[indexa], y[indexb]);
+    indexa++;
+
+    int w0, h0, c0, n0;
+    w0 = indexa % dima[3];
+    h0 = (indexa / dima[3]) % dima[2];
+    c0 = (indexa / dima[3] / dima[2]) % dima[1];
+    n0 = indexa / dima[3] / dima[2] / dima[1];
+
+    if (broadcast_dim[3]) w0 = 0;
+    if (broadcast_dim[2]) h0 = 0;
+    if (broadcast_dim[1]) c0 = 0;
+    if (broadcast_dim[0]) n0 = 0;
+    indexb = w0 + dimb[3] * (h0 + dimb[2] * (c0 + dimb[1] * n0));
+  }
+}
+
+template <typename Dtype, typename Op>
+void dimension_reduction(const int dima[4], const int dimb[4], const Dtype init, const Dtype* a, Dtype* b) // src: a, dst: b 
+{
+  int n = 1, m = 1;
+  int indexa=0, indexb=0;
+  int broadcast_dim[4];
+  Op op;
+
+  for (int i=0; i<4; i++) broadcast_dim[i] = (dimb[i] == 1);
+  for (int i=0; i<4; i++) n *= dima[i];
+  for (int i=0; i<4; i++) m *= dimb[i];
+  for (int i=0; i<m; i++) b[i] = init;
+
+  for (int i=0; i<n; i++)
+  {
+    b[indexb] = op(a[indexa], b[indexb]);
+    indexa++;
+
+    int w0, h0, c0, n0;
+    w0 = indexa % dima[3];
+    h0 = (indexa / dima[3]) % dima[2];
+    c0 = (indexa / dima[3] / dima[2]) % dima[1];
+    n0 = indexa / dima[3] / dima[2] / dima[1];
+
+    if (broadcast_dim[3]) w0 = 0;
+    if (broadcast_dim[2]) h0 = 0;
+    if (broadcast_dim[1]) c0 = 0;
+    if (broadcast_dim[0]) n0 = 0;
+    indexb = w0 + dimb[3] * (h0 + dimb[2] * (c0 + dimb[1] * n0));
+  }
+}
+
+template <typename Dtype> class PrivateAddOp    { public: Dtype operator()(const Dtype a, const Dtype b){ return a+b; } };
+template <typename Dtype> class PrivateMulOp    { public: Dtype operator()(const Dtype a, const Dtype b){ return a*b; } };
+template <typename Dtype> class PrivateSubOp    { public: Dtype operator()(const Dtype a, const Dtype b){ return a-b; } };
+template <typename Dtype> class PrivateRevSubOp { public: Dtype operator()(const Dtype a, const Dtype b){ return b-a; } };
+template <typename Dtype> class PrivateDivOp    { public: Dtype operator()(const Dtype a, const Dtype b){ return a/b; } };
+template <typename Dtype> class PrivateRevDivOp { public: Dtype operator()(const Dtype a, const Dtype b){ return b/a; } };
+
+static bool sould_broadcast_a(const int dima[4], const int dimb[4])
+{
+  bool brd_a = 0;
+  bool brd_b = 0;
+  for (int i=0; i<4; i++)
+  {
+    if (dima[i] < dimb[i])
+    {
+      assert(dima[i] == 1);
+      brd_a |= true;
+    }
+    else if (dima[i] > dimb[i])
+    {
+      assert(dimb[i] == 1);
+      brd_b |= true;
+    }
+  }
+  assert(brd_a ^ brd_b);
+  return brd_a;
+}
+
+template<>
+void caffe_add_broadcast<float>(const int dima[4], const int dimb[4], const float* a, const float* b, float* y)
+{
+  if (sould_broadcast_a(dima, dimb))
+    xopy_broadcast<float, PrivateAddOp<float> > (dimb, dima, b, a, y);
+  else
+    xopy_broadcast<float, PrivateAddOp<float> > (dima, dimb, a, b, y);
+}
+
+template<>
+void caffe_sub_broadcast<float>(const int dima[4], const int dimb[4], const float* a, const float* b, float* y)
+{
+  if (sould_broadcast_a(dima, dimb))
+    xopy_broadcast<float, PrivateRevSubOp<float> > (dimb, dima, b, a, y);
+  else
+    xopy_broadcast<float, PrivateSubOp<float> > (dima, dimb, a, b, y);
+}
+
+template<>
+void caffe_mul_broadcast<float>(const int dima[4], const int dimb[4], const float* a, const float* b, float* y)
+{
+  if (sould_broadcast_a(dima, dimb))
+    xopy_broadcast<float, PrivateMulOp<float> > (dimb, dima, b, a, y);
+  else
+    xopy_broadcast<float, PrivateMulOp<float> > (dima, dimb, a, b, y);
+}
+
+template<>
+void caffe_div_broadcast<float>(const int dima[4], const int dimb[4], const float* a, const float* b, float* y)
+{
+  if (sould_broadcast_a(dima, dimb))
+    xopy_broadcast<float, PrivateRevDivOp<float> > (dimb, dima, b, a, y);
+  else
+    xopy_broadcast<float, PrivateDivOp<float> > (dima, dimb, a, b, y);
+}
+
+template<>
+void caffe_add_broadcast<double>(const int dima[4], const int dimb[4], const double* a, const double* b, double* y)
+{
+  if (sould_broadcast_a(dima, dimb))
+    xopy_broadcast<double, PrivateAddOp<double> > (dimb, dima, b, a, y);
+  else
+    xopy_broadcast<double, PrivateAddOp<double> > (dima, dimb, a, b, y);
+}
+
+template<>
+void caffe_sub_broadcast<double>(const int dima[4], const int dimb[4], const double* a, const double* b, double* y)
+{
+  if (sould_broadcast_a(dima, dimb))
+    xopy_broadcast<double, PrivateRevSubOp<double> > (dimb, dima, b, a, y);
+  else
+    xopy_broadcast<double, PrivateSubOp<double> > (dima, dimb, a, b, y);
+}
+
+template<>
+void caffe_mul_broadcast<double>(const int dima[4], const int dimb[4], const double* a, const double* b, double* y)
+{
+  if (sould_broadcast_a(dima, dimb))
+    xopy_broadcast<double, PrivateMulOp<double> > (dimb, dima, b, a, y);
+  else
+    xopy_broadcast<double, PrivateMulOp<double> > (dima, dimb, a, b, y);
+}
+
+template<>
+void caffe_div_broadcast<double>(const int dima[4], const int dimb[4], const double* a, const double* b, double* y)
+{
+  if (sould_broadcast_a(dima, dimb))
+    xopy_broadcast<double, PrivateRevDivOp<double> > (dimb, dima, b, a, y);
+  else
+    xopy_broadcast<double, PrivateDivOp<double> > (dima, dimb, a, b, y);
+}
+
+template<>
+void caffe_sum_reduce<float>(const int dima[4], const int dimb[4], const float* a, float* b)
+{
+  if (sould_broadcast_a(dima, dimb))
+    assert(1==0);
+  else
+    dimension_reduction<float, PrivateAddOp<float> >(dima, dimb, 0, a, b);
+}
+
+template<>
+void caffe_sum_reduce<double>(const int dima[4], const int dimb[4], const double* a, double* b)
+{
+  if (sould_broadcast_a(dima, dimb))
+    assert(1==0);
+  else
+    dimension_reduction<double, PrivateAddOp<double> >(dima, dimb, 0, a, b);
+}
+
+
 }  // namespace caffe

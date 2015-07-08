@@ -26,19 +26,39 @@ void EltwiseLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
     }
   }
   stable_prod_grad_ = this->layer_param_.eltwise_param().stable_prod_grad();
+  broadcast_ = this->layer_param_.eltwise_param().broadcast();
 }
 
 template <typename Dtype>
 void EltwiseLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
-  for (int i = 1; i < bottom.size(); ++i) {
-    CHECK(bottom[i]->shape() == bottom[0]->shape());
-  }
-  top[0]->ReshapeLike(*bottom[0]);
-  // If max operation, we will initialize the vector index part.
-  if (this->layer_param_.eltwise_param().operation() ==
-      EltwiseParameter_EltwiseOp_MAX && top.size() == 1) {
-    max_idx_.Reshape(bottom[0]->shape());
+  if (broadcast_) {
+    CHECK(bottom.size() == 2);
+    bool alarger = true;
+    bool blarger = true;
+    for (int i = 0; i < 4; ++i) {
+      alarger &= ((bottom[0]->shape()[i] == bottom[1]->shape()[i]) || 
+                  ((bottom[0]->shape()[i] > bottom[1]->shape()[i]) && (bottom[1]->shape()[i]==1)));
+      blarger &= ((bottom[0]->shape()[i] == bottom[1]->shape()[i]) || 
+                  ((bottom[0]->shape()[i] < bottom[1]->shape()[i]) && (bottom[0]->shape()[i]==1)));
+
+    }
+    CHECK((alarger ^ blarger));
+    if (alarger) top[0]->ReshapeLike(*bottom[0]);
+    else top[0]->ReshapeLike(*bottom[1]);
+    
+    CHECK(op_ == EltwiseParameter_EltwiseOp_PROD || op_ == EltwiseParameter_EltwiseOp_SUM);
+
+  } else {
+    for (int i = 1; i < bottom.size(); ++i) {
+      CHECK(bottom[i]->shape() == bottom[0]->shape());
+    }
+    top[0]->ReshapeLike(*bottom[0]);
+    // If max operation, we will initialize the vector index part.
+    if (this->layer_param_.eltwise_param().operation() ==
+        EltwiseParameter_EltwiseOp_MAX && top.size() == 1) {
+      max_idx_.Reshape(bottom[0]->shape());
+    }
   }
 }
 
@@ -50,50 +70,73 @@ void EltwiseLayer<Dtype>::Forward_cpu(
   const Dtype* bottom_data_b = NULL;
   const int count = top[0]->count();
   Dtype* top_data = top[0]->mutable_cpu_data();
-  switch (op_) {
-  case EltwiseParameter_EltwiseOp_PROD:
-    caffe_mul(count, bottom[0]->cpu_data(), bottom[1]->cpu_data(), top_data);
-    for (int i = 2; i < bottom.size(); ++i) {
-      caffe_mul(count, top_data, bottom[i]->cpu_data(), top_data);
+  if (broadcast_) {
+    int dima[4];
+    int dimb[4];
+    for (int i=0; i<4; i++)
+    {
+      dima[i] = bottom[0]->shape()[i];
+      dimb[i] = bottom[1]->shape()[i];
     }
-    break;
-  case EltwiseParameter_EltwiseOp_SUM:
-    caffe_set(count, Dtype(0), top_data);
-    // TODO(shelhamer) does BLAS optimize to sum for coeff = 1?
-    for (int i = 0; i < bottom.size(); ++i) {
-      caffe_axpy(count, coeffs_[i], bottom[i]->cpu_data(), top_data);
-    }
-    break;
-  case EltwiseParameter_EltwiseOp_MAX:
-    // Initialize
-    mask = max_idx_.mutable_cpu_data();
-    caffe_set(count, -1, mask);
-    caffe_set(count, Dtype(-FLT_MAX), top_data);
-    // bottom 0 & 1
     bottom_data_a = bottom[0]->cpu_data();
     bottom_data_b = bottom[1]->cpu_data();
-    for (int idx = 0; idx < count; ++idx) {
-      if (bottom_data_a[idx] > bottom_data_b[idx]) {
-        top_data[idx] = bottom_data_a[idx];  // maxval
-        mask[idx] = 0;  // maxid
-      } else {
-        top_data[idx] = bottom_data_b[idx];  // maxval
-        mask[idx] = 1;  // maxid
-      }
+
+    switch (op_) {
+    case EltwiseParameter_EltwiseOp_PROD:
+      caffe_mul_broadcast<Dtype>(dima, dimb, bottom_data_a, bottom_data_b, top_data);
+      break;
+    case EltwiseParameter_EltwiseOp_SUM:
+      caffe_add_broadcast<Dtype>(dima, dimb, bottom_data_a, bottom_data_b, top_data);
+      break;
+    default:
+      LOG(FATAL) << "Unknown elementwise broadcast operation.";
     }
-    // bottom 2++
-    for (int blob_idx = 2; blob_idx < bottom.size(); ++blob_idx) {
-      bottom_data_b = bottom[blob_idx]->cpu_data();
+  } else {
+    switch (op_) {
+    case EltwiseParameter_EltwiseOp_PROD:
+      caffe_mul(count, bottom[0]->cpu_data(), bottom[1]->cpu_data(), top_data);
+      for (int i = 2; i < bottom.size(); ++i) {
+        caffe_mul(count, top_data, bottom[i]->cpu_data(), top_data);
+      }
+      break;
+    case EltwiseParameter_EltwiseOp_SUM:
+      caffe_set(count, Dtype(0), top_data);
+      // TODO(shelhamer) does BLAS optimize to sum for coeff = 1?
+      for (int i = 0; i < bottom.size(); ++i) {
+        caffe_axpy(count, coeffs_[i], bottom[i]->cpu_data(), top_data);
+      }
+      break;
+    case EltwiseParameter_EltwiseOp_MAX:
+      // Initialize
+      mask = max_idx_.mutable_cpu_data();
+      caffe_set(count, -1, mask);
+      caffe_set(count, Dtype(-FLT_MAX), top_data);
+      // bottom 0 & 1
+      bottom_data_a = bottom[0]->cpu_data();
+      bottom_data_b = bottom[1]->cpu_data();
       for (int idx = 0; idx < count; ++idx) {
-        if (bottom_data_b[idx] > top_data[idx]) {
+        if (bottom_data_a[idx] > bottom_data_b[idx]) {
+          top_data[idx] = bottom_data_a[idx];  // maxval
+          mask[idx] = 0;  // maxid
+        } else {
           top_data[idx] = bottom_data_b[idx];  // maxval
-          mask[idx] = blob_idx;  // maxid
+          mask[idx] = 1;  // maxid
         }
       }
+      // bottom 2++
+      for (int blob_idx = 2; blob_idx < bottom.size(); ++blob_idx) {
+        bottom_data_b = bottom[blob_idx]->cpu_data();
+        for (int idx = 0; idx < count; ++idx) {
+          if (bottom_data_b[idx] > top_data[idx]) {
+            top_data[idx] = bottom_data_b[idx];  // maxval
+            mask[idx] = blob_idx;  // maxid
+          }
+        }
+      }
+      break;
+    default:
+      LOG(FATAL) << "Unknown elementwise operation.";
     }
-    break;
-  default:
-    LOG(FATAL) << "Unknown elementwise operation.";
   }
 }
 
@@ -104,48 +147,99 @@ void EltwiseLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   const int count = top[0]->count();
   const Dtype* top_data = top[0]->cpu_data();
   const Dtype* top_diff = top[0]->cpu_diff();
-  for (int i = 0; i < bottom.size(); ++i) {
-    if (propagate_down[i]) {
-      const Dtype* bottom_data = bottom[i]->cpu_data();
-      Dtype* bottom_diff = bottom[i]->mutable_cpu_diff();
-      switch (op_) {
-      case EltwiseParameter_EltwiseOp_PROD:
-        if (stable_prod_grad_) {
-          bool initialized = false;
-          for (int j = 0; j < bottom.size(); ++j) {
-            if (i == j) { continue; }
-            if (!initialized) {
-              caffe_copy(count, bottom[j]->cpu_data(), bottom_diff);
-              initialized = true;
-            } else {
-              caffe_mul(count, bottom[j]->cpu_data(), bottom_diff,
-                        bottom_diff);
+  if (broadcast_) {
+    bool broadcasted[2];
+    int i, j;
+    broadcasted[0] = broadcasted[1] = false;
+    for (int i=0; i<4; i++) {
+      if (bottom[0]->shape()[i] > bottom[1]->shape()[i]) broadcasted[1] = true;
+      if (bottom[0]->shape()[i] < bottom[1]->shape()[i]) broadcasted[0] = true;
+    }
+
+    i=0; j=1; //i -> not broadcasted  j-> broadcasted
+    if (broadcasted[0]){ i=1; j=0; }
+
+    int dima[4], dimb[4];
+    const Dtype* bot_data = bottom[i]->cpu_data();
+    const Dtype* bot_data_brd = bottom[j]->cpu_data();
+    Dtype*       bot_diff = bottom[i]->mutable_cpu_diff();
+    Dtype*       bot_diff_brd = bottom[j]->mutable_cpu_diff();
+
+    for (int n=0; n<4; n++) dima[n] = bottom[i]->shape()[n];
+    for (int n=0; n<4; n++) dimb[n] = bottom[j]->shape()[n];
+
+    switch(op_)
+    {
+    case EltwiseParameter_EltwiseOp_PROD:
+      if (propagate_down[j]) {
+        int n=0;
+        for (int x=0; x<4; x++) n *= dima[x];
+        caffe_mul<Dtype>(n, top_diff, bot_data, bot_diff);
+        caffe_sum_reduce<Dtype>(dima, dimb, bot_diff, bot_diff_brd);
+        caffe_set(n, Dtype(0), bot_diff);
+      }
+      
+      if (propagate_down[i])
+        caffe_mul_broadcast<Dtype>(dima, dimb, top_diff, bot_data_brd, bot_diff);
+
+      break;
+    case EltwiseParameter_EltwiseOp_SUM:
+      if (propagate_down[j]) 
+        caffe_sum_reduce<Dtype>(dima, dimb, top_diff, bot_diff_brd);
+
+      if (propagate_down[i]) {
+        int n=0;
+        for (int x=0; x<4; x++) n *= dima[x];
+        caffe_copy<Dtype>(n, top_diff, bot_diff);
+      }
+      break;
+    default:
+      LOG(FATAL) << "Unknown elementwise operation.";
+    }
+  } else {
+    for (int i = 0; i < bottom.size(); ++i) {
+      if (propagate_down[i]) {
+        const Dtype* bottom_data = bottom[i]->cpu_data();
+        Dtype* bottom_diff = bottom[i]->mutable_cpu_diff();
+        switch (op_) {
+        case EltwiseParameter_EltwiseOp_PROD:
+          if (stable_prod_grad_) {
+            bool initialized = false;
+            for (int j = 0; j < bottom.size(); ++j) {
+              if (i == j) { continue; }
+              if (!initialized) {
+                caffe_copy(count, bottom[j]->cpu_data(), bottom_diff);
+                initialized = true;
+              } else {
+                caffe_mul(count, bottom[j]->cpu_data(), bottom_diff,
+                          bottom_diff);
+              }
             }
+          } else {
+            caffe_div(count, top_data, bottom_data, bottom_diff);
           }
-        } else {
-          caffe_div(count, top_data, bottom_data, bottom_diff);
-        }
-        caffe_mul(count, bottom_diff, top_diff, bottom_diff);
-        break;
-      case EltwiseParameter_EltwiseOp_SUM:
-        if (coeffs_[i] == Dtype(1)) {
-          caffe_copy(count, top_diff, bottom_diff);
-        } else {
-          caffe_cpu_scale(count, coeffs_[i], top_diff, bottom_diff);
-        }
-        break;
-      case EltwiseParameter_EltwiseOp_MAX:
-        mask = max_idx_.cpu_data();
-        for (int index = 0; index < count; ++index) {
-          Dtype gradient = 0;
-          if (mask[index] == i) {
-            gradient += top_diff[index];
+          caffe_mul(count, bottom_diff, top_diff, bottom_diff);
+          break;
+        case EltwiseParameter_EltwiseOp_SUM:
+          if (coeffs_[i] == Dtype(1)) {
+            caffe_copy(count, top_diff, bottom_diff);
+          } else {
+            caffe_cpu_scale(count, coeffs_[i], top_diff, bottom_diff);
           }
-          bottom_diff[index] = gradient;
+          break;
+        case EltwiseParameter_EltwiseOp_MAX:
+          mask = max_idx_.cpu_data();
+          for (int index = 0; index < count; ++index) {
+            Dtype gradient = 0;
+            if (mask[index] == i) {
+              gradient += top_diff[index];
+            }
+            bottom_diff[index] = gradient;
+          }
+          break;
+        default:
+          LOG(FATAL) << "Unknown elementwise operation.";
         }
-        break;
-      default:
-        LOG(FATAL) << "Unknown elementwise operation.";
       }
     }
   }

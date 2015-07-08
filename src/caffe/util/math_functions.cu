@@ -185,6 +185,7 @@ void caffe_gpu_add_scalar(const int N, const double alpha, double* Y) {
       N, alpha, Y);
 }
 
+
 template <typename Dtype>
 __global__ void add_kernel(const int n, const Dtype* a,
     const Dtype* b, Dtype* y) {
@@ -192,6 +193,8 @@ __global__ void add_kernel(const int n, const Dtype* a,
     y[index] = a[index] + b[index];
   }
 }
+
+
 
 template <>
 void caffe_gpu_add<float>(const int N, const float* a, const float* b,
@@ -217,6 +220,7 @@ __global__ void sub_kernel(const int n, const Dtype* a,
   }
 }
 
+
 template <>
 void caffe_gpu_sub<float>(const int N, const float* a, const float* b,
     float* y) {
@@ -232,6 +236,314 @@ void caffe_gpu_sub<double>(const int N, const double* a, const double* b,
   sub_kernel<double><<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>(
       N, a, b, y);
 }
+
+template <typename Dtype, typename Op>
+__global__ void xopy_kernel_broadcast(int n, int dima0, int dima1, int dima2, int dima3, 
+                                            int dimb0, int dimb1, int dimb2, int dimb3, 
+                                            const Dtype* x, const Dtype* y, Dtype* z)
+{
+  int w0, h0, c0, n0;
+  int w1, h1, c1, n1;
+  int indexa, indexb, indexy;
+
+  CUDA_KERNEL_LOOP(index, n) {
+
+    w0 = index % dima3;
+    h0 = (index / dima3) % dima2;
+    c0 = (index / dima2 / dima3) % dima1;
+    n0 = index / dima3 / dima2 / dima1;
+    
+    w1 = (dimb3 < dima3)? 0 : w0;
+    h1 = (dimb2 < dima2)? 0 : h0;
+    c1 = (dimb1 < dima1)? 0 : c0;
+    n1 = (dimb0 < dima0)? 0 : n0;
+
+    indexa = index;
+    indexb = w1 + (h1 + (c1 + n1 * dimb1) * dimb2) * dimb3;
+      
+    Op o;
+    z[index] = o(x[indexa], y[indexb]);
+  }
+}
+
+template <typename Dtype, typename Op>
+__global__ void gpu_dimension_reduction(int n, int dima0, int dima1, int dima2, int dima3, 
+                                               int dimb0, int dimb1, int dimb2, int dimb3, 
+                                               Dtype init, const Dtype* a, Dtype* b)
+{
+  int w0, h0, c0, n0;
+  int w1, h1, c1, n1;
+  int indexa, indexb, indexy;
+  Dtype result = init;
+  int wmax, hmax, cmax, nmax;
+  if (dima0 > dimb0) nmax = dima0; else nmax = 1;
+  if (dima1 > dimb1) cmax = dima1; else cmax = 1;
+  if (dima2 > dimb2) hmax = dima2; else hmax = 1;
+  if (dima3 > dimb3) wmax = dima3; else wmax = 1;
+  // a complete trash, very slow version. need optimization
+  CUDA_KERNEL_LOOP(index, n) {
+
+    w0 = index % dimb3;
+    h0 = (index / dimb3) % dimb2;
+    c0 = (index / dimb2 / dimb3) % dimb1;
+    n0 = index / dimb3 / dimb2 / dimb1;
+
+    Op op;
+    for (int dn = 0; dn < nmax; dn++) {
+    for (int dc = 0; dc < cmax; dc++) {
+    for (int dh = 0; dh < hmax; dh++) {
+    for (int dw = 0; dw < wmax; dw++) {
+      indexa = (w0+dw) + ((h0+dh) + ((c0+dc) + (n0+dn) * dima1) * dima2) * dima3;
+      result = op(result, a[indexa]);
+    }}}}
+      
+    b[index] = result;
+  }
+}
+
+
+template <typename Dtype> class PrivateAddOp    { public: __device__ Dtype operator()(const Dtype a, const Dtype b){ return a+b; } };
+template <typename Dtype> class PrivateMulOp    { public: __device__ Dtype operator()(const Dtype a, const Dtype b){ return a*b; } };
+template <typename Dtype> class PrivateSubOp    { public: __device__ Dtype operator()(const Dtype a, const Dtype b){ return a-b; } };
+template <typename Dtype> class PrivateRevSubOp { public: __device__ Dtype operator()(const Dtype a, const Dtype b){ return b-a; } };
+template <typename Dtype> class PrivateDivOp    { public: __device__ Dtype operator()(const Dtype a, const Dtype b){ return a/b; } };
+template <typename Dtype> class PrivateRevDivOp { public: __device__ Dtype operator()(const Dtype a, const Dtype b){ return b/a; } };
+
+static bool sould_broadcast_a(const int dima[4], const int dimb[4])
+{
+  bool brd_a = 0;
+  bool brd_b = 0;
+  for (int i=0; i<4; i++)
+  {
+    if (dima[i] < dimb[i])
+    {
+      assert(dima[i] == 1);
+      brd_a |= true;
+    }
+    else if (dima[i] > dimb[i])
+    {
+      assert(dimb[i] == 1);
+      brd_b |= true;
+    }
+  }
+  assert(brd_a ^ brd_b);
+  return brd_a;
+}
+
+template <>
+void caffe_gpu_add_broadcast<float>(const int dima[4], const int dimb[4],
+                                    const float* a, const float* b, float* y) {
+
+  int Na = dima[0] * dima[1] * dima[2] * dima[3];
+  int Nb = dimb[0] * dimb[1] * dimb[2] * dimb[3];
+  int N = (Na > Nb)? Na: Nb;
+
+  if (sould_broadcast_a(dima, dimb))
+  {
+    xopy_kernel_broadcast<float, PrivateAddOp<float> >
+    <<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>
+    (N, dimb[0], dimb[1], dimb[2], dimb[3], dima[0], dima[1], dima[2], dima[3], b, a, y);
+  }
+  else
+  {
+    xopy_kernel_broadcast<float, PrivateAddOp<float> >
+    <<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>
+    (N, dima[0], dima[1], dima[2], dima[3], dimb[0], dimb[1], dimb[2], dimb[3], a, b, y);
+  }
+}
+
+template <>
+void caffe_gpu_sub_broadcast<float>(const int dima[4], const int dimb[4],
+                                    const float* a, const float* b, float* y) {
+
+  int Na = dima[0] * dima[1] * dima[2] * dima[3];
+  int Nb = dimb[0] * dimb[1] * dimb[2] * dimb[3];
+  int N = (Na > Nb)? Na: Nb;
+
+  if (sould_broadcast_a(dima, dimb))
+  {
+    xopy_kernel_broadcast<float, PrivateRevSubOp<float> >
+    <<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>
+    (N, dimb[0], dimb[1], dimb[2], dimb[3], dima[0], dima[1], dima[2], dima[3], b, a, y);
+  }
+  else
+  {
+    xopy_kernel_broadcast<float, PrivateSubOp<float> >
+    <<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>
+    (N, dima[0], dima[1], dima[2], dima[3], dimb[0], dimb[1], dimb[2], dimb[3], a, b, y);
+  }
+}
+
+template <>
+void caffe_gpu_mul_broadcast<float>(const int dima[4], const int dimb[4],
+                                    const float* a, const float* b, float* y) {
+
+  int Na = dima[0] * dima[1] * dima[2] * dima[3];
+  int Nb = dimb[0] * dimb[1] * dimb[2] * dimb[3];
+  int N = (Na > Nb)? Na: Nb;
+
+  if (sould_broadcast_a(dima, dimb))
+  {
+    xopy_kernel_broadcast<float, PrivateMulOp<float> >
+    <<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>
+    (N, dimb[0], dimb[1], dimb[2], dimb[3], dima[0], dima[1], dima[2], dima[3], b, a, y);
+  }
+  else
+  {
+    xopy_kernel_broadcast<float, PrivateMulOp<float> >
+    <<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>
+    (N, dima[0], dima[1], dima[2], dima[3], dimb[0], dimb[1], dimb[2], dimb[3], a, b, y);
+  }
+}
+
+template <>
+void caffe_gpu_div_broadcast<float>(const int dima[4], const int dimb[4],
+                                    const float* a, const float* b, float* y) {
+
+  int Na = dima[0] * dima[1] * dima[2] * dima[3];
+  int Nb = dimb[0] * dimb[1] * dimb[2] * dimb[3];
+  int N = (Na > Nb)? Na: Nb;
+
+  if (sould_broadcast_a(dima, dimb))
+  {
+    xopy_kernel_broadcast<float, PrivateRevDivOp<float> >
+    <<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>
+    (N, dimb[0], dimb[1], dimb[2], dimb[3], dima[0], dima[1], dima[2], dima[3], b, a, y);
+  }
+  else
+  {
+    xopy_kernel_broadcast<float, PrivateDivOp<float> >
+    <<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>
+    (N, dima[0], dima[1], dima[2], dima[3], dimb[0], dimb[1], dimb[2], dimb[3], a, b, y);
+  }
+}
+
+template <>
+void caffe_gpu_add_broadcast<double>(const int dima[4], const int dimb[4],
+                                    const double* a, const double* b, double* y) {
+
+  int Na = dima[0] * dima[1] * dima[2] * dima[3];
+  int Nb = dimb[0] * dimb[1] * dimb[2] * dimb[3];
+  int N = (Na > Nb)? Na: Nb;
+
+  if (sould_broadcast_a(dima, dimb))
+  {
+    xopy_kernel_broadcast<double, PrivateAddOp<double> >
+    <<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>
+    (N, dimb[0], dimb[1], dimb[2], dimb[3], dima[0], dima[1], dima[2], dima[3], b, a, y);
+  }
+  else
+  {
+    xopy_kernel_broadcast<double, PrivateAddOp<double> >
+    <<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>
+    (N, dima[0], dima[1], dima[2], dima[3], dimb[0], dimb[1], dimb[2], dimb[3], a, b, y);
+  }
+}
+
+template <>
+void caffe_gpu_sub_broadcast<double>(const int dima[4], const int dimb[4],
+                                    const double* a, const double* b, double* y) {
+
+  int Na = dima[0] * dima[1] * dima[2] * dima[3];
+  int Nb = dimb[0] * dimb[1] * dimb[2] * dimb[3];
+  int N = (Na > Nb)? Na: Nb;
+
+  if (sould_broadcast_a(dima, dimb))
+  {
+    xopy_kernel_broadcast<double, PrivateRevSubOp<double> >
+    <<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>
+    (N, dimb[0], dimb[1], dimb[2], dimb[3], dima[0], dima[1], dima[2], dima[3], b, a, y);
+  }
+  else
+  {
+    xopy_kernel_broadcast<double, PrivateSubOp<double> >
+    <<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>
+    (N, dima[0], dima[1], dima[2], dima[3], dimb[0], dimb[1], dimb[2], dimb[3], a, b, y);
+  }
+}
+
+template <>
+void caffe_gpu_mul_broadcast<double>(const int dima[4], const int dimb[4],
+                                    const double* a, const double* b, double* y) {
+
+  int Na = dima[0] * dima[1] * dima[2] * dima[3];
+  int Nb = dimb[0] * dimb[1] * dimb[2] * dimb[3];
+  int N = (Na > Nb)? Na: Nb;
+
+  if (sould_broadcast_a(dima, dimb))
+  {
+    xopy_kernel_broadcast<double, PrivateMulOp<double> >
+    <<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>
+    (N, dimb[0], dimb[1], dimb[2], dimb[3], dima[0], dima[1], dima[2], dima[3], b, a, y);
+  }
+  else
+  {
+    xopy_kernel_broadcast<double, PrivateMulOp<double> >
+    <<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>
+    (N, dima[0], dima[1], dima[2], dima[3], dimb[0], dimb[1], dimb[2], dimb[3], a, b, y);
+  }
+}
+
+template <>
+void caffe_gpu_div_broadcast<double>(const int dima[4], const int dimb[4],
+                                    const double* a, const double* b, double* y) {
+  int Na = dima[0] * dima[1] * dima[2] * dima[3];
+  int Nb = dimb[0] * dimb[1] * dimb[2] * dimb[3];
+  int N = (Na > Nb)? Na: Nb;
+  if (sould_broadcast_a(dima, dimb))
+  {
+    xopy_kernel_broadcast<double, PrivateRevDivOp<double> >
+    <<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>
+    (N, dimb[0], dimb[1], dimb[2], dimb[3], dima[0], dima[1], dima[2], dima[3], b, a, y);
+  }
+  else
+  {
+    xopy_kernel_broadcast<double, PrivateDivOp<double> >
+    <<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>
+    (N, dima[0], dima[1], dima[2], dima[3], dimb[0], dimb[1], dimb[2], dimb[3], a, b, y);
+  }
+}
+
+template <>
+void caffe_gpu_sum_reduce<float>(const int dima[4], const int dimb[4],
+                             const float* a, float* b) {
+
+  int Na = dima[0] * dima[1] * dima[2] * dima[3];
+  int Nb = dimb[0] * dimb[1] * dimb[2] * dimb[3];
+  int N = (Na < Nb)? Na: Nb;
+
+  if (sould_broadcast_a(dima, dimb))
+  {
+    assert(1==0);
+  }
+  else
+  {
+    gpu_dimension_reduction <float, PrivateAddOp<float> >
+    <<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>
+    (N, dima[0], dima[1], dima[2], dima[3], dimb[0], dimb[1], dimb[2], dimb[3], 0, a, b);
+  }
+}
+
+template <>
+void caffe_gpu_sum_reduce<double>(const int dima[4], const int dimb[4],
+                             const double* a, double* b) {
+
+  int Na = dima[0] * dima[1] * dima[2] * dima[3];
+  int Nb = dimb[0] * dimb[1] * dimb[2] * dimb[3];
+  int N = (Na < Nb)? Na: Nb;
+
+  if (sould_broadcast_a(dima, dimb))
+  {
+    assert(1==0);
+  }
+  else
+  {
+    gpu_dimension_reduction <double, PrivateAddOp<double> >
+    <<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>
+    (N, dima[0], dima[1], dima[2], dima[3], dimb[0], dimb[1], dimb[2], dimb[3], 0, a, b);
+  }
+}
+
 
 template <typename Dtype>
 __global__ void mul_kernel(const int n, const Dtype* a,
@@ -280,6 +592,7 @@ void caffe_gpu_div<double>(const int N, const double* a,
   div_kernel<double><<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>(
       N, a, b, y);
 }
+
 
 template <typename Dtype>
 __global__ void abs_kernel(const int n, const Dtype* a, Dtype* y) {
@@ -461,5 +774,6 @@ void caffe_gpu_rng_gaussian(const int n, const double mu, const double sigma,
   CURAND_CHECK(
       curandGenerateNormalDouble(Caffe::curand_generator(), r, n, mu, sigma));
 }
+
 
 }  // namespace caffe

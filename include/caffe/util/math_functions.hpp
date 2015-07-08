@@ -65,6 +65,19 @@ template <typename Dtype>
 void caffe_div(const int N, const Dtype* a, const Dtype* b, Dtype* y);
 
 template <typename Dtype>
+void caffe_add_broadcast(const int dima[4], const int dimb[4], const Dtype* a, const Dtype* b, Dtype* y);
+
+template <typename Dtype>
+void caffe_sub_broadcast(const int dima[4], const int dimb[4], const Dtype* a, const Dtype* b, Dtype* y);
+
+template <typename Dtype>
+void caffe_mul_broadcast(const int dima[4], const int dimb[4], const Dtype* a, const Dtype* b, Dtype* y);
+
+template <typename Dtype>
+void caffe_div_broadcast(const int dima[4], const int dimb[4], const Dtype* a, const Dtype* b, Dtype* y);
+
+
+template <typename Dtype>
 void caffe_powx(const int n, const Dtype* a, const Dtype b, Dtype* y);
 
 unsigned int caffe_rng_rand();
@@ -252,6 +265,25 @@ void caffe_gpu_fabs(const int n, const Dtype* x, Dtype* y);
 
 template <typename Dtype>
 void caffe_gpu_scale(const int n, const Dtype alpha, const Dtype *x, Dtype* y);
+
+template <typename Dtype>
+void caffe_gpu_add_broadcast(const int dima[4], const int dimb[4], const Dtype* a, const Dtype* b, Dtype* y);
+
+template <typename Dtype>
+void caffe_gpu_sub_broadcast(const int dima[4], const int dimb[4], const Dtype* a, const Dtype* b, Dtype* y);
+
+template <typename Dtype>
+void caffe_gpu_mul_broadcast(const int dima[4], const int dimb[4], const Dtype* a, const Dtype* b, Dtype* y);
+
+template <typename Dtype>
+void caffe_gpu_div_broadcast(const int dima[4], const int dimb[4], const Dtype* a, const Dtype* b, Dtype* y);
+
+template <typename Dtype>
+void caffe_sum_reduce(const int dima[4], const int dimb[4], const Dtype* a, Dtype* b);
+
+template <typename Dtype>
+void caffe_gpu_sum_reduce(const int dima[4], const int dimb[4], const Dtype* a, Dtype* b);
+
 
 #define DEFINE_AND_INSTANTIATE_GPU_UNARY_FUNC(name, operation) \
 template<typename Dtype> \
