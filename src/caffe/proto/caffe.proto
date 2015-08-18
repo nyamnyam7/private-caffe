@@ -358,6 +358,7 @@ message LayerParameter {
   optional CosParameter cos_param = 999;
   optional MaxoutParameter maxout_param = 998;
   optional NMSParameter nms_param = 997;
+  optional OnehotParameter onehot_param = 996;
 }
 
 // Message that stores parameters used to apply transformation
@@ -670,6 +671,15 @@ message MVNParameter {
 
   // Epsilon for not dividing by zero while normalizing variance
   optional float eps = 3 [default = 1e-9];
+}
+
+message OnehotParameter {
+  optional uint32 num_classes = 1 [default = 0]; // number of classes
+  enum Engine {
+    DEFAULT = 0;
+    CAFFE = 1;
+  }
+  optional Engine engine = 2 [default = DEFAULT];
 }
 
 message PoolingParameter {

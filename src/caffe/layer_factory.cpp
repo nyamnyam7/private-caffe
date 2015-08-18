@@ -128,6 +128,20 @@ shared_ptr<Layer<Dtype> > GetCosLayer(const LayerParameter& param) {
 
 REGISTER_LAYER_CREATOR(Cos, GetCosLayer);
 
+template <typename Dtype>
+shared_ptr<Layer<Dtype> > GetOnehotLayer(const LayerParameter& param) {
+  OnehotParameter_Engine engine = param.onehot_param().engine();
+  if (engine == OnehotParameter_Engine_DEFAULT) {
+    engine = OnehotParameter_Engine_CAFFE;
+  }
+  if (engine == OnehotParameter_Engine_CAFFE) {
+    return shared_ptr<Layer<Dtype> >(new OnehotLayer<Dtype>(param));
+  } else {
+    LOG(FATAL) << "Layer " << param.name() << " has unknown engine.";
+  }
+}
+
+REGISTER_LAYER_CREATOR(Onehot, GetOnehotLayer);
 
 // Get softmax layer according to engine.
 template <typename Dtype>

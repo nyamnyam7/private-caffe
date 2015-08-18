@@ -170,8 +170,9 @@ ifneq ($(CPU_ONLY), 1)
 	LIBRARIES := cudart cublas curand
 endif
 LIBRARIES += glog gflags protobuf leveldb snappy \
-	lmdb boost_system hdf5_hl hdf5 m \
-	opencv_core opencv_highgui opencv_imgproc opencv_imgcodecs
+	lmdb boost_system \
+	hdf5_serial m \
+	opencv_core opencv_highgui opencv_imgproc hdf5_serial_hl #opencv_imgcodecs 
 PYTHON_LIBRARIES := boost_python python2.7
 WARNINGS := -Wall -Wno-sign-compare
 

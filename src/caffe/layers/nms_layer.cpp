@@ -73,74 +73,41 @@ void NMSLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 
   caffe_set(top_count, Dtype(unactivated_coeff_), mask);
   // The main loop
-  
-  int hstep = ((kernel_top_ > kernel_bottom_)?kernel_top_:kernel_bottom_) + 1;
-  int vstep = ((kernel_left_ > kernel_right_)?kernel_left_:kernel_right_) + 1;
 
   for (int n = 0; n < bottom[0]->num(); ++n) {
       for (int c=0; c < channels_; c++){
-          // Inferior implementation of
-          // block algorithm in "Efficient non-maximum suppression"
-          for (int i=kernel_top_; i<height_-kernel_bottom_; i+=vstep) {
-              for (int j=kernel_left_; j<width_-kernel_right_; j+=hstep) {
-                  int mi = i, mj = j; // maximum
-                  int mmi = i, mmj = j; // minimum
-                  Dtype val_mi_mj = bottom_data[mi * width_ + mj];
-                  Dtype val_mmi_mmj = bottom_data[mmi * width_ + mmj];
+          for (int h=0; h < height_; h++){
+              
+              int hstart = h - kernel_top_;
+              int hend = h + kernel_bottom_;
+              if (hstart < 0) hstart = 0;
+              if (hend > height_) hend = height_;
 
-                  for (int i2 = i; i2<=i+kernel_bottom_; i2++) {
-                      for (int j2 = j; j2<=j+kernel_right_; j2++) {
-                          Dtype val_i2_j2 = bottom_data[i2 * width_ + j2];
-                          if (val_i2_j2 > val_mi_mj) {
-                              mi = i2;
-                              mj = j2;
-                              val_mi_mj = val_i2_j2;
-                          }
-                          if (val_i2_j2 < val_mmi_mmj) {
-                              mmi = i2;
-                              mmj = j2;
-                              val_mmi_mmj = val_i2_j2;
-                          }
-                      }
-                  }
-         
-                  bool max_failflag = false;
-                  bool min_failflag = false;
+              for (int w=0; w < width_; w++) {
+                  int wstart = w - kernel_left_;
+                  int wend = w + kernel_right_;
 
-                  for (int i2=mi-kernel_top_; i2<=mi+kernel_bottom_; i2++) {
-                      for (int j2=mj-kernel_left_; j2<=mj+kernel_right_; j2++) {
-                          Dtype val_i2_j2 = bottom_data[i2 * width_ + j2];
-                          if (val_i2_j2 > val_mi_mj) {
-                              max_failflag = true;
-                              break;
+                  if (wstart < 0) wstart = 0;
+                  if (wend > width_) wend = width_;
+
+                  bool ismax = true, ismin = true;
+                  Dtype val = bottom_data[h * width_ + w];
+
+                  for (int hi=hstart; hi<hend; hi++) {
+                      for (int wi=wstart; wi<wend; wi++) {
+                          if (bottom_data[hi * width_ + wi] > val) ismax = false; 
+                          if (bottom_data[hi * width_ + wi] < val) ismin = false; 
+                          if (bottom_data[hi * width_ + wi] == val && (hi < h || wi < w)) {
+                              ismax = false;
+                              ismin = false;
                           }
-                          if (max_failflag) break;
                       }
-                      if (max_failflag) break;
                   }
-                  
-                  for (int i2=mmi-kernel_top_; i2<=mmi+kernel_bottom_; i2++) {
-                      for (int j2=mmj-kernel_left_; j2<=mmj+kernel_right_; j2++) {
-                          Dtype val_i2_j2 = bottom_data[i2 * width_ + j2];
-                          if (val_i2_j2 < val_mmi_mmj) {
-                              min_failflag = true;
-                              break;
-                          }
-                          if (min_failflag) break;
-                      }
-                      if (min_failflag) break;
-                  }
-         
-                  if (!max_failflag)
-                  {
-                      mask[mi * width_ + mj] = activated_coeff_;
-                  }
-                  if (!min_failflag)
-                  {
-                      mask[mmi * width_ + mmj] = activated_coeff_;
-                  }
+
+                  if (ismax) mask[h * width_ + w] = activated_coeff_;
+                  else if (ismin) mask[h * width_ + w] = activated_coeff_;
+                  else mask[h * width_ + w] = unactivated_coeff_;
               }
-
           }
 
           for (int i=0; i<bottom[0]->offset(0, 1); i++)

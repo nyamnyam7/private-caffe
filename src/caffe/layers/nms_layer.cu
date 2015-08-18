@@ -33,26 +33,23 @@ __global__ void NMSForward(const int nthreads, const Dtype* bottom_data,
     bool is_maximum = true;
     bool is_minimum = true;
     // extremely inefficient implementation of non-maximum suprression
+    
+    if (jstart < 0) jstart = 0;
+    if (jend > width) jend = width;
+    if (istart < 0) istart = 0;
+    if (iend > height) iend = height;
 
     const Dtype* rel = bottom_data + (n * channels + c) * height * width;
-    if (jstart >= 0 && jend <= width && istart >= 0 && iend <= height)
-    {
-        for (int i=istart; i<iend; i++){
-            for (int j=jstart; j<jend; j++){
-                if ( rel[i * width + j] > curval) is_maximum=false;
-                if ( rel[i * width + j] < curval) is_minimum=false;
-                if ( rel[i * width + j] == curval && ( h > i || w > j ) )
-                {
-                    is_maximum = false;
-                    is_minimum = false;
-                }
+    for (int i=istart; i<iend; i++){
+        for (int j=jstart; j<jend; j++){
+            if ( rel[i * width + j] > curval) is_maximum=false;
+            if ( rel[i * width + j] < curval) is_minimum=false;
+            if ( rel[i * width + j] == curval && ( h > i || w > j ) )
+            {
+                is_maximum = false;
+                is_minimum = false;
             }
         }
-    }
-    else
-    {
-        is_maximum = false;
-        is_minimum = false;
     }
 
     if (is_maximum || is_minimum) {
