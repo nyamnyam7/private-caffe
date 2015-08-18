@@ -14,6 +14,7 @@
 #include "caffe/syncedmem.hpp"
 #include "caffe/util/math_functions.hpp"
 #include "caffe/util/io.hpp"
+#include "caffe/util/hdf5.hpp"
 #include "hdf5.h"
 #include "hdf5_hl.h"
 
