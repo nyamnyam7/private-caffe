@@ -391,6 +391,8 @@ message LayerParameter {
   optional MaxoutParameter maxout_param = 998;
   optional NMSParameter nms_param = 997;
   optional OnehotParameter onehot_param = 996;
+  optional CropParameter crop_param = 995;
+
 }
 
 // Message that stores parameters used to apply transformation
@@ -716,6 +718,30 @@ message OnehotParameter {
     CAFFE = 1;
   }
   optional Engine engine = 2 [default = DEFAULT];
+}
+
+message CropParameter {
+  optional uint32 x1a = 1 [default = 0];
+  optional uint32 x1b = 2 [default = 0];
+  optional uint32 x2a = 3 [default = 0];
+  optional uint32 x2b = 4 [default = 0];
+
+  optional uint32 y1a = 5 [default = 0];
+  optional uint32 y1b = 6 [default = 0];
+  optional uint32 y2a = 7 [default = 0];
+  optional uint32 y2b = 8 [default = 0];
+  
+  optional bool   resample = 9  [default = true];
+  optional bool   random   = 10 [default = true];
+  optional Resample method = 11 [default = LINEAR]; 
+  enum Resample {
+    LINEAR = 0;
+  }
+  enum Engine {
+    DEFAULT = 0;
+    CAFFE = 1;
+  }
+  optional Engine engine = 12 [default = DEFAULT];
 }
 
 message PoolingParameter {
@@ -1105,6 +1131,7 @@ message V1LayerParameter {
   optional TransformationParameter transform_param = 36;
   optional LossParameter loss_param = 42;
   optional V0LayerParameter layer = 1;
+  optional CropParameter crop_param = 96;
   optional NMSParameter nms_param = 97;
   optional MaxoutParameter maxout_param = 98;
   optional CosParameter cos_param = 99;
