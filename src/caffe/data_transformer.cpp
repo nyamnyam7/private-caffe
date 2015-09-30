@@ -1,4 +1,5 @@
 #include <opencv2/core/core.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include <string>
 #include <vector>
@@ -51,6 +52,12 @@ void DataTransformer<Dtype>::Transform(const Datum& datum,
   const bool has_uint8 = data.size() > 0;
   const bool has_mean_values = mean_values_.size() > 0;
 
+  const bool do_random_size = param_.random_size();
+  const int  random_width_min = param_.width_min();
+  const int  random_width_max = param_.width_max();
+  const int  random_height_max = param_.height_max();
+  const int  random_height_min = param_.height_min();
+
   CHECK_GT(datum_channels, 0);
   CHECK_GE(datum_height, crop_size);
   CHECK_GE(datum_width, crop_size);
@@ -93,6 +100,7 @@ void DataTransformer<Dtype>::Transform(const Datum& datum,
 
   Dtype datum_element;
   int top_index, data_index;
+
   for (int c = 0; c < datum_channels; ++c) {
     for (int h = 0; h < height; ++h) {
       for (int w = 0; w < width; ++w) {
@@ -122,6 +130,31 @@ void DataTransformer<Dtype>::Transform(const Datum& datum,
       }
     }
   }
+
+  if (do_random_size) {
+    int random_width, random_height, random_offset_x, random_offset_y;
+
+    if (phase_ == TRAIN) {
+        random_width = Rand(random_width_max - random_width_min) + random_width_min;
+        random_height = Rand(random_height_max - random_height_min) + random_height_min;
+        random_offset_x = Rand(width - random_width);
+        random_offset_y = Rand(height - random_height);
+    } else {
+        random_width = width;
+        random_height = height;
+        random_offset_x = 0;
+        random_offset_y = 0;
+    }
+
+    for (int c = 0; c < datum_channels; ++c) {
+      cv::Mat orig(height, width, CV_32FC1, &transformed_data[ c * width * height]);
+      cv::Mat cropped, resized;
+      cropped = orig(cv::Rect(random_offset_x, random_offset_y, random_width, random_height)).clone();
+      cv::resize(cropped, resized, cv::Size(height, width));
+      resized.copyTo(orig);
+    }
+  }
+  
 }
 
 template<typename Dtype>
@@ -228,6 +261,12 @@ void DataTransformer<Dtype>::Transform(const cv::Mat& cv_img,
   const int width = transformed_blob->width();
   const int num = transformed_blob->num();
 
+  const bool do_random_size = param_.random_size();
+  const int  random_width_min = param_.width_min();
+  const int  random_width_max = param_.width_max();
+  const int  random_height_max = param_.height_max();
+  const int  random_height_min = param_.height_min();
+
   CHECK_EQ(channels, img_channels);
   CHECK_LE(height, img_height);
   CHECK_LE(width, img_width);
@@ -314,6 +353,26 @@ void DataTransformer<Dtype>::Transform(const cv::Mat& cv_img,
       }
     }
   }
+
+  if (do_random_size) {
+    int random_width, random_height, random_offset_x, random_offset_y;
+
+    if (phase_ == TRAIN) {
+      random_width = Rand(random_width_max - random_width_min) + random_width_min;
+      random_height = Rand(random_height_max - random_height_min) + random_height_min;
+      random_offset_x = Rand(width - random_width);
+      random_offset_y = Rand(height - random_height);
+
+      for (int c = 0; c < channels; ++c) {
+        cv::Mat orig(height, width, CV_32FC1, &transformed_data[ c * width * height]);
+        cv::Mat cropped, resized;
+        cropped = orig(cv::Rect(random_offset_x, random_offset_y, random_width, random_height)).clone();
+        cv::resize(cropped, resized, cv::Size(height, width));
+        resized.copyTo(orig);
+      }
+    }
+  }
+
 }
 
 template<typename Dtype>
@@ -352,6 +411,12 @@ void DataTransformer<Dtype>::Transform(Blob<Dtype>* input_blob,
   const bool do_mirror = param_.mirror() && Rand(2);
   const bool has_mean_file = param_.has_mean_file();
   const bool has_mean_values = mean_values_.size() > 0;
+
+  const bool do_random_size = param_.random_size();
+  const int  random_width_min = param_.width_min();
+  const int  random_width_max = param_.width_max();
+  const int  random_height_max = param_.height_max();
+  const int  random_height_min = param_.height_min();
 
   int h_off = 0;
   int w_off = 0;
@@ -426,6 +491,25 @@ void DataTransformer<Dtype>::Transform(Blob<Dtype>* input_blob,
   if (scale != Dtype(1)) {
     DLOG(INFO) << "Scale: " << scale;
     caffe_scal(size, scale, transformed_data);
+  }
+
+  if (do_random_size) {
+    int random_width, random_height, random_offset_x, random_offset_y;
+
+    if (phase_ == TRAIN) {
+      random_width = Rand(random_width_max - random_width_min) + random_width_min;
+      random_height = Rand(random_height_max - random_height_min) + random_height_min;
+      random_offset_x = Rand(width - random_width);
+      random_offset_y = Rand(height - random_height);
+
+      for (int c = 0; c < channels; ++c) {
+        cv::Mat orig(height, width, CV_32FC1, &transformed_data[ c * width * height]);
+        cv::Mat cropped, resized;
+        cropped = orig(cv::Rect(random_offset_x, random_offset_y, random_width, random_height)).clone();
+        cv::resize(cropped, resized, cv::Size(height, width));
+        resized.copyTo(orig);
+      }
+    } 
   }
 }
 
@@ -508,7 +592,8 @@ vector<int> DataTransformer<Dtype>::InferBlobShape(
 template <typename Dtype>
 void DataTransformer<Dtype>::InitRand() {
   const bool needs_rand = param_.mirror() ||
-      (phase_ == TRAIN && param_.crop_size());
+      (phase_ == TRAIN && param_.crop_size()) ||
+      (phase_ == TRAIN && param_.random_size());
   if (needs_rand) {
     const unsigned int rng_seed = caffe_rng_rand();
     rng_.reset(new Caffe::RNG(rng_seed));

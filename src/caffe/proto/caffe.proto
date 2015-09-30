@@ -414,6 +414,12 @@ message TransformationParameter {
   optional bool force_color = 6 [default = false];
   // Force the decoded image to have 1 color channels.
   optional bool force_gray = 7 [default = false];
+
+  optional bool random_size = 8 [ default = false];
+  optional uint32 width_min = 9 [ default = 0];
+  optional uint32 width_max = 10 [ default = 0];
+  optional uint32 height_min= 11 [ default = 0];
+  optional uint32 height_max = 12 [ default = 0];
 }
 
 // Message that stores parameters shared by loss layers
