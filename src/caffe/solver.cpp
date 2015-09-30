@@ -17,15 +17,31 @@
 
 namespace caffe {
 
+template<typename Dtype>
+void Solver<Dtype>::SetActionFunction(ActionCallback func) {
+  action_request_function_ = func;
+}
+
+template<typename Dtype>
+SolverAction::Enum Solver<Dtype>::GetRequestedAction() {
+  if (action_request_function_) {
+    // If the external request function has been set, call it.
+    return action_request_function_();
+  }
+  return SolverAction::NONE;
+}
+
 template <typename Dtype>
 Solver<Dtype>::Solver(const SolverParameter& param, const Solver* root_solver)
-    : net_(), callbacks_(), root_solver_(root_solver) {
+    : net_(), callbacks_(), root_solver_(root_solver),
+      requested_early_exit_(false) {
   Init(param);
 }
 
 template <typename Dtype>
 Solver<Dtype>::Solver(const string& param_file, const Solver* root_solver)
-    : net_(), callbacks_(), root_solver_(root_solver) {
+    : net_(), callbacks_(), root_solver_(root_solver),
+      requested_early_exit_(false) {
   SolverParameter param;
   ReadProtoFromTextFileOrDie(param_file, &param);
   Init(param);
@@ -39,6 +55,7 @@ void Solver<Dtype>::Init(const SolverParameter& param) {
     << std::endl << param.DebugString();
   param_ = param;
   CHECK_GE(param_.average_loss(), 1) << "average_loss should be non-negative.";
+  CheckSnapshotWritePermissions();
   if (Caffe::root_solver() && param_.random_seed() >= 0) {
     Caffe::set_random_seed(param_.random_seed());
   }
@@ -195,6 +212,10 @@ void Solver<Dtype>::Step(int iters) {
         && (iter_ > 0 || param_.test_initialization())
         && Caffe::root_solver()) {
       TestAll();
+      if (requested_early_exit_) {
+        // Break out of the while loop because stop was requested while testing.
+        break;
+      }
     }
 
     for (int i = 0; i < callbacks_.size(); ++i) {
@@ -250,11 +271,19 @@ void Solver<Dtype>::Step(int iters) {
     // the number of times the weights have been updated.
     ++iter_;
 
+    SolverAction::Enum request = GetRequestedAction();
+
     // Save a snapshot if needed.
-    if (param_.snapshot()
-        && iter_ % param_.snapshot() == 0
-        && Caffe::root_solver()) {
+    if ((param_.snapshot()
+         && iter_ % param_.snapshot() == 0
+         && Caffe::root_solver()) ||
+         (request == SolverAction::SNAPSHOT)) {
       Snapshot();
+    }
+    if (SolverAction::STOP == request) {
+      requested_early_exit_ = true;
+      // Break out of training loop.
+      break;
     }
   }
 }
@@ -264,6 +293,9 @@ void Solver<Dtype>::Solve(const char* resume_file) {
   CHECK(Caffe::root_solver());
   LOG(INFO) << "Solving " << net_->name();
   LOG(INFO) << "Learning Rate Policy: " << param_.lr_policy();
+
+  // Initialize to false every time we start solving.
+  requested_early_exit_ = false;
 
   if (resume_file) {
     LOG(INFO) << "Restoring previous solver status from " << resume_file;
@@ -278,6 +310,10 @@ void Solver<Dtype>::Solve(const char* resume_file) {
   if (param_.snapshot_after_train()
       && (!param_.snapshot() || iter_ % param_.snapshot() != 0)) {
     Snapshot();
+  }
+  if (requested_early_exit_) {
+    LOG(INFO) << "Optimization stopped early.";
+    return;
   }
   // After the optimization is done, run an additional train and test pass to
   // display the train and test loss/outputs if appropriate (based on the
@@ -296,10 +332,11 @@ void Solver<Dtype>::Solve(const char* resume_file) {
   LOG(INFO) << "Optimization Done.";
 }
 
-
 template <typename Dtype>
 void Solver<Dtype>::TestAll() {
-  for (int test_net_id = 0; test_net_id < test_nets_.size(); ++test_net_id) {
+  for (int test_net_id = 0;
+       test_net_id < test_nets_.size() && !requested_early_exit_;
+       ++test_net_id) {
     Test(test_net_id);
   }
 }
@@ -317,6 +354,21 @@ void Solver<Dtype>::Test(const int test_net_id) {
   const shared_ptr<Net<Dtype> >& test_net = test_nets_[test_net_id];
   Dtype loss = 0;
   for (int i = 0; i < param_.test_iter(test_net_id); ++i) {
+    SolverAction::Enum request = GetRequestedAction();
+    // Check to see if stoppage of testing/training has been requested.
+    while (request != SolverAction::NONE) {
+        if (SolverAction::SNAPSHOT == request) {
+          Snapshot();
+        } else if (SolverAction::STOP == request) {
+          requested_early_exit_ = true;
+        }
+        request = GetRequestedAction();
+    }
+    if (requested_early_exit_) {
+      // break out of test loop.
+      break;
+    }
+
     Dtype iter_loss;
     const vector<Blob<Dtype>*>& result =
         test_net->Forward(bottom_vec, &iter_loss);
@@ -341,6 +393,10 @@ void Solver<Dtype>::Test(const int test_net_id) {
       }
     }
   }
+  if (requested_early_exit_) {
+    LOG(INFO)     << "Test interrupted.";
+    return;
+  }
   if (param_.test_compute_loss()) {
     loss /= param_.test_iter(test_net_id);
     LOG(INFO) << "Test loss: " << loss;
@@ -361,23 +417,40 @@ void Solver<Dtype>::Test(const int test_net_id) {
   }
 }
 
-
 template <typename Dtype>
 void Solver<Dtype>::Snapshot() {
   CHECK(Caffe::root_solver());
   string model_filename;
   switch (param_.snapshot_format()) {
-    case caffe::SolverParameter_SnapshotFormat_BINARYPROTO:
-      model_filename = SnapshotToBinaryProto();
-      break;
-    case caffe::SolverParameter_SnapshotFormat_HDF5:
-      model_filename = SnapshotToHDF5();
-      break;
-    default:
-      LOG(FATAL) << "Unsupported snapshot format.";
+  case caffe::SolverParameter_SnapshotFormat_BINARYPROTO:
+    model_filename = SnapshotToBinaryProto();
+    break;
+  case caffe::SolverParameter_SnapshotFormat_HDF5:
+    model_filename = SnapshotToHDF5();
+    break;
+  default:
+    LOG(FATAL) << "Unsupported snapshot format.";
   }
 
   SnapshotSolverState(model_filename);
+}
+
+template <typename Dtype>
+void Solver<Dtype>::CheckSnapshotWritePermissions() {
+  if (Caffe::root_solver() && param_.snapshot()) {
+    CHECK(param_.has_snapshot_prefix())
+        << "In solver params, snapshot is specified but snapshot_prefix is not";
+    string probe_filename = SnapshotFilename(".tempfile");
+    std::ofstream probe_ofs(probe_filename.c_str());
+    if (probe_ofs.good()) {
+      probe_ofs.close();
+      std::remove(probe_filename.c_str());
+    } else {
+      LOG(FATAL) << "Cannot write to snapshot prefix '"
+          << param_.snapshot_prefix() << "'.  Make sure "
+          << "that the directory exists and is writeable.";
+    }
+  }
 }
 
 template <typename Dtype>
@@ -678,7 +751,7 @@ void SGDSolver<Dtype>::SnapshotSolverStateToBinaryProto(
   }
   string snapshot_filename = Solver<Dtype>::SnapshotFilename(".solverstate");
   LOG(INFO)
-    << "Snapshotting solver state to binary proto file" << snapshot_filename;
+    << "Snapshotting solver state to binary proto file " << snapshot_filename;
   WriteProtoToBinaryFile(state, snapshot_filename.c_str());
 }
 

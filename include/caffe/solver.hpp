@@ -1,12 +1,34 @@
 #ifndef CAFFE_OPTIMIZATION_SOLVER_HPP_
 #define CAFFE_OPTIMIZATION_SOLVER_HPP_
-
+#include <boost/function.hpp>
 #include <string>
 #include <vector>
 
 #include "caffe/net.hpp"
 
 namespace caffe {
+
+/**
+  * @brief Enumeration of actions that a client of the Solver may request by
+  * implementing the Solver's action request function, which a
+  * a client may optionally provide in order to request early termination
+  * or saving a snapshot without exiting. In the executable caffe, this
+  * mechanism is used to allow the snapshot to be saved when stopping
+  * execution with a SIGINT (Ctrl-C).
+  */
+  namespace SolverAction {
+    enum Enum {
+      NONE = 0,  // Take no special action.
+      STOP = 1,  // Stop training. snapshot_after_train controls whether a
+                 // snapshot is created.
+      SNAPSHOT = 2  // Take a snapshot, and keep training.
+    };
+  }
+
+/**
+ * @brief Type of a function that returns a Solver Action enumeration.
+ */
+typedef boost::function<SolverAction::Enum()> ActionCallback;
 
 /**
  * @brief An interface for classes that perform optimization on Net%s.
@@ -23,6 +45,12 @@ class Solver {
   void Init(const SolverParameter& param);
   void InitTrainNet();
   void InitTestNets();
+
+  // Client of the Solver optionally may call this in order to set the function
+  // that the solver uses to see what action it should take (e.g. snapshot or
+  // exit training early).
+  void SetActionFunction(ActionCallback func);
+  SolverAction::Enum GetRequestedAction();
   // The main entry of the solver function. In default, iter will be zero. Pass
   // in a non-zero iter number to resume training for a pre-trained net.
   virtual void Solve(const char* resume_file = NULL);
@@ -54,6 +82,8 @@ class Solver {
     callbacks_.push_back(value);
   }
 
+  void CheckSnapshotWritePermissions();
+
  protected:
   // Make and apply the update value for the current iteration.
   virtual void ApplyUpdate() = 0;
@@ -83,6 +113,13 @@ class Solver {
   // The root solver that holds root nets (actually containing shared layers)
   // in data parallelism
   const Solver* const root_solver_;
+
+  // A function that can be set by a client of the Solver to provide indication
+  // that it wants a snapshot saved and/or to exit early.
+  ActionCallback action_request_function_;
+
+  // True iff a request to stop early was received.
+  bool requested_early_exit_;
 
   DISABLE_COPY_AND_ASSIGN(Solver);
 };
@@ -246,19 +283,19 @@ Solver<Dtype>* GetSolver(const SolverParameter& param) {
 
   switch (type) {
   case SolverParameter_SolverType_SGD:
-      return new SGDSolver<Dtype>(param);
+    return new SGDSolver<Dtype>(param);
   case SolverParameter_SolverType_NESTEROV:
-      return new NesterovSolver<Dtype>(param);
+    return new NesterovSolver<Dtype>(param);
   case SolverParameter_SolverType_ADAGRAD:
-      return new AdaGradSolver<Dtype>(param);
+    return new AdaGradSolver<Dtype>(param);
   case SolverParameter_SolverType_RMSPROP:
-      return new RMSPropSolver<Dtype>(param);
+    return new RMSPropSolver<Dtype>(param);
   case SolverParameter_SolverType_ADADELTA:
-      return new AdaDeltaSolver<Dtype>(param);
+    return new AdaDeltaSolver<Dtype>(param);
   case SolverParameter_SolverType_ADAM:
-      return new AdamSolver<Dtype>(param);
+    return new AdamSolver<Dtype>(param);
   default:
-      LOG(FATAL) << "Unknown SolverType: " << type;
+    LOG(FATAL) << "Unknown SolverType: " << type;
   }
   return (Solver<Dtype>*) NULL;
 }
