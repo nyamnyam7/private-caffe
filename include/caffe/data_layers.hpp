@@ -59,6 +59,7 @@ class Batch {
   Blob<Dtype> data_, label_;
 };
 
+
 template <typename Dtype>
 class BasePrefetchingDataLayer :
     public BaseDataLayer<Dtype>, public InternalThread {
@@ -88,6 +89,44 @@ class BasePrefetchingDataLayer :
 
   Blob<Dtype> transformed_data_;
 };
+
+
+template <typename Dtype>
+class ExtendedBatch {
+  public:
+    std::vector< Blob<Dtype>* > data_;
+};
+
+template <typename Dtype>
+class BaseExtendedPrefetchingDataLayer :
+    public BaseDataLayer<Dtype>, public InternalThread {
+ public:
+  explicit BaseExtendedPrefetchingDataLayer(const LayerParameter& param);
+  // LayerSetUp: implements common data layer setup functionality, and calls
+  // DataLayerSetUp to do special data layer setup for individual layer types.
+  // This method may not be overridden.
+  virtual ~BaseExtendedPrefetchingDataLayer();
+  void LayerSetUp(const vector<Blob<Dtype>*>& bottom,
+      const vector<Blob<Dtype>*>& top);
+
+  virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
+      const vector<Blob<Dtype>*>& top);
+  virtual void Forward_gpu(const vector<Blob<Dtype>*>& bottom,
+      const vector<Blob<Dtype>*>& top);
+
+  // Prefetches batches (asynchronously if to GPU memory)
+  static const int PREFETCH_COUNT = 3;
+
+ protected:
+  virtual void InternalThreadEntry();
+  virtual void load_batch(ExtendedBatch<Dtype>* batch) = 0;
+
+  ExtendedBatch<Dtype> prefetch_[PREFETCH_COUNT];
+  BlockingQueue<ExtendedBatch<Dtype>*> prefetch_free_;
+  BlockingQueue<ExtendedBatch<Dtype>*> prefetch_full_;
+};
+
+
 
 template <typename Dtype>
 class DataLayer : public BasePrefetchingDataLayer<Dtype> {
@@ -311,21 +350,21 @@ class MemoryDataLayer : public BaseDataLayer<Dtype> {
  * TODO(dox): thorough documentation for Forward and proto params.
  */
 template <typename Dtype>
-class LibDataLayer : public BaseDataLayer<Dtype> {
+class LibDataLayer : public BaseExtendedPrefetchingDataLayer<Dtype> {
  public:
-  explicit LibDataLayer(const LayerParameter& param)
-      : BaseDataLayer<Dtype>(param) {}
+  explicit LibDataLayer(const LayerParameter& param);
+  virtual ~LibDataLayer();
   virtual void DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top);
 
+  virtual inline bool ShareInParallel() const { return false; }
   virtual inline const char* type() const { return "LibData"; }
   virtual inline int ExactNumBottomBlobs() const { return 0; }
   virtual inline int MinTopBlobs() const { return 1; }
   virtual inline int MaxTopBlobs() const { return 100; }
 
  protected:
-  virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
-      const vector<Blob<Dtype>*>& top);
+  virtual void load_batch(ExtendedBatch<Dtype>* batch);
 
   size_t pos_;
 

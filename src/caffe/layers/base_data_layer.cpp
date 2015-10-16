@@ -121,11 +121,115 @@ void BasePrefetchingDataLayer<Dtype>::Forward_cpu(
   prefetch_free_.push(batch);
 }
 
+
+template <typename Dtype>
+BaseExtendedPrefetchingDataLayer<Dtype>::BaseExtendedPrefetchingDataLayer(
+    const LayerParameter& param)
+    : BaseDataLayer<Dtype>(param),
+      prefetch_free_(), prefetch_full_() {
+  for (int i = 0; i < PREFETCH_COUNT; ++i) {
+    prefetch_free_.push(&prefetch_[i]);
+  }
+}
+
+template <typename Dtype>
+BaseExtendedPrefetchingDataLayer<Dtype>::~BaseExtendedPrefetchingDataLayer()
+{
+  for (int i = 0; i < PREFETCH_COUNT; ++i) {
+    ExtendedBatch<Dtype>& batch = prefetch_[i];
+    for (int j=0; j < batch.data_.size(); j++) {
+      delete batch.data_[j];
+    }
+  }
+}
+
+template <typename Dtype>
+void BaseExtendedPrefetchingDataLayer<Dtype>::LayerSetUp(
+    const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
+  // At first, we need to allocate Blobs in  ExtendedBatches
+  for (int i = 0; i < PREFETCH_COUNT; ++i) {
+    for(int j = 0; j < top.size(); j++) {
+      prefetch_[i].data_.push_back(new Blob<Dtype>());
+    }
+  }
+  BaseDataLayer<Dtype>::LayerSetUp(bottom, top);
+  // Before starting the prefetch thread, we make cpu_data and gpu_data
+  // calls so that the prefetch thread does not accidentally make simultaneous
+  // cudaMalloc calls when the main thread is running. In some GPUs this
+  // seems to cause failures if we do not so.
+  for (int i = 0; i < PREFETCH_COUNT; ++i) {
+    for(int j = 0; j < top.size(); j++) {
+      prefetch_[i].data_[j]->mutable_cpu_data();
+    }
+  }
+#ifndef CPU_ONLY
+  if (Caffe::mode() == Caffe::GPU) {
+    for (int i = 0; i < PREFETCH_COUNT; ++i) {
+      for(int j = 0; j < top.size(); j++) {
+        prefetch_[i].data_[j]->mutable_gpu_data();
+      }
+    }
+  }
+#endif
+  DLOG(INFO) << "Initializing prefetch";
+  StartInternalThread();
+  DLOG(INFO) << "Prefetch initialized.";
+}
+
+template <typename Dtype>
+void BaseExtendedPrefetchingDataLayer<Dtype>::InternalThreadEntry() {
+#ifndef CPU_ONLY
+  cudaStream_t stream;
+  if (Caffe::mode() == Caffe::GPU) {
+    CUDA_CHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
+  }
+#endif
+  try {
+    while (!must_stop()) {
+      ExtendedBatch<Dtype>* batch = prefetch_free_.pop();
+      load_batch(batch);
+#ifndef CPU_ONLY
+      if (Caffe::mode() == Caffe::GPU) {
+        for (int j=0; j<batch->data_.size(); j++)
+            batch->data_[j]->data().get()->async_gpu_push(stream);
+        CUDA_CHECK(cudaStreamSynchronize(stream));
+      }
+#endif
+      prefetch_full_.push(batch);
+    }
+  } catch (boost::thread_interrupted&) {
+    // Interrupted exception is expected on shutdown
+  }
+#ifndef CPU_ONLY
+  if (Caffe::mode() == Caffe::GPU) {
+    CUDA_CHECK(cudaStreamDestroy(stream));
+  }
+#endif
+}
+
+template <typename Dtype>
+void BaseExtendedPrefetchingDataLayer<Dtype>::Forward_cpu(
+    const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
+  ExtendedBatch<Dtype>* batch = prefetch_full_.pop("Data layer prefetch queue empty");
+  // Reshape to loaded data.
+  for (int i=0; i < top.size(); i++) {
+      top[i]->ReshapeLike(*(batch->data_[i]));
+      // Copy the data
+      caffe_copy(batch->data_[i]->count(), batch->data_[i]->cpu_data(),
+                 top[i]->mutable_cpu_data());
+  }
+  DLOG(INFO) << "Prefetch copied";
+  prefetch_free_.push(batch);
+}
+
+
 #ifdef CPU_ONLY
 STUB_GPU_FORWARD(BasePrefetchingDataLayer, Forward);
+STUB_GPU_FORWARD(BaseExtendedPrefetchingDataLayer, Forward);
 #endif
 
 INSTANTIATE_CLASS(BaseDataLayer);
 INSTANTIATE_CLASS(BasePrefetchingDataLayer);
+INSTANTIATE_CLASS(BaseExtendedPrefetchingDataLayer);
 
 }  // namespace caffe

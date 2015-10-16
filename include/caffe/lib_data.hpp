@@ -7,8 +7,8 @@
 namespace caffe {
 
 struct LibDataInterface {
-    void (*get_shape)(void* mem, int blobidx, std::vector<int>& shape);
-    void (*reset)(void* mem, size_t pos, size_t batchsz);
+    void (*get_shape)(void* mem, int blobidx, size_t batchsz, std::vector<int>& shape);
+    void (*reset)(void* mem, size_t pos);
     void (*fill)(void* mem, int blobidx, size_t pos, const std::vector<int>& shape, void* data);
     int  (*num_top_blobs)(void* mem);
 };
