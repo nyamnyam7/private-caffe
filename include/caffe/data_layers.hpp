@@ -16,6 +16,7 @@
 #include "caffe/proto/caffe.pb.h"
 #include "caffe/util/blocking_queue.hpp"
 #include "caffe/util/db.hpp"
+#include "caffe/lib_data.hpp"
 
 namespace caffe {
 
@@ -302,6 +303,46 @@ class MemoryDataLayer : public BaseDataLayer<Dtype> {
   Blob<Dtype> added_label_;
   bool has_new_data_;
 };
+
+
+/**
+ * @brief Provides data to the Net from .so file.
+ *
+ * TODO(dox): thorough documentation for Forward and proto params.
+ */
+template <typename Dtype>
+class LibDataLayer : public BaseDataLayer<Dtype> {
+ public:
+  explicit LibDataLayer(const LayerParameter& param)
+      : BaseDataLayer<Dtype>(param) {}
+  virtual void DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
+      const vector<Blob<Dtype>*>& top);
+
+  virtual inline const char* type() const { return "LibData"; }
+  virtual inline int ExactNumBottomBlobs() const { return 0; }
+  virtual inline int MinTopBlobs() const { return 1; }
+  virtual inline int MaxTopBlobs() const { return 100; }
+
+ protected:
+  virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
+      const vector<Blob<Dtype>*>& top);
+
+  size_t pos_;
+
+  std::string libpath_;
+  std::string libparam_;
+
+  void* libhandle_;
+  void* libuserdata_;
+  InitFunction initfunc_;
+  LibDataInterface iface_;
+
+  int num_blobs_;
+  int batch_size_;
+
+};
+
+
 
 /**
  * @brief Provides data to the Net from windows of images files, specified
