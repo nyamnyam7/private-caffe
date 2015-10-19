@@ -393,7 +393,7 @@ message LayerParameter {
   optional MaxoutParameter maxout_param = 998;
   optional NMSParameter nms_param = 997;
   optional OnehotParameter onehot_param = 996;
-  optional LibDataParameter lib_data_param = 995;
+  optional LibExternalParameter lib_external_param = 995;
 }
 
 // Message that stores parameters used to apply transformation
@@ -757,7 +757,7 @@ message MemoryDataParameter {
   optional uint32 width = 4;
 }
 
-message LibDataParameter {
+message LibExternalParameter {
   optional uint32 batch_size = 1;
   optional string libpath = 2;
   optional string libparam = 3;
@@ -1180,7 +1180,7 @@ message V1LayerParameter {
   optional TransformationParameter transform_param = 36;
   optional LossParameter loss_param = 42;
   optional V0LayerParameter layer = 1;
-  optional LibDataParameter lib_data_param = 96;
+  optional LibExternalParameter lib_external_param = 96;
   optional NMSParameter nms_param = 97;
   optional MaxoutParameter maxout_param = 98;
   optional CosParameter cos_param = 99;

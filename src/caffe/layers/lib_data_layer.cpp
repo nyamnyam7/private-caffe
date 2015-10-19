@@ -21,6 +21,7 @@ LibDataLayer<Dtype>::LibDataLayer(const LayerParameter& param)
 template <typename Dtype>
 LibDataLayer<Dtype>::~LibDataLayer() {
   this->StopInternalThread();
+  dlclose(libhandle_);
 }
 
 
@@ -28,9 +29,9 @@ template <typename Dtype>
 void LibDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
      const vector<Blob<Dtype>*>& top) {
 
-  libpath_ = this->layer_param_.lib_data_param().libpath();
-  libparam_ = this->layer_param_.lib_data_param().libparam();
-  batch_size_ = this->layer_param_.lib_data_param().batch_size();
+  libpath_ = this->layer_param_.lib_external_param().libpath();
+  libparam_ = this->layer_param_.lib_external_param().libparam();
+  batch_size_ = this->layer_param_.lib_external_param().batch_size();
   pos_ = 0;
 
   libhandle_ = dlopen(libpath_.c_str(), RTLD_LAZY);
@@ -38,7 +39,7 @@ void LibDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
   CHECK(libhandle_);
 
   char* errstr;
-  initfunc_ = reinterpret_cast<InitFunction>(dlsym(libhandle_, "init"));
+  initfunc_ = reinterpret_cast<DataInitFunction>(dlsym(libhandle_, "init"));
   if ((errstr = dlerror()) != NULL) {
       fputs(errstr, stderr);
       CHECK(!errstr);

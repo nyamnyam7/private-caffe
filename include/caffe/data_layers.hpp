@@ -16,7 +16,7 @@
 #include "caffe/proto/caffe.pb.h"
 #include "caffe/util/blocking_queue.hpp"
 #include "caffe/util/db.hpp"
-#include "caffe/lib_data.hpp"
+#include "caffe/lib_external.hpp"
 
 namespace caffe {
 
@@ -373,7 +373,7 @@ class LibDataLayer : public BaseExtendedPrefetchingDataLayer<Dtype> {
 
   void* libhandle_;
   void* libuserdata_;
-  InitFunction initfunc_;
+  DataInitFunction initfunc_;
   LibDataInterface iface_;
 
   int num_blobs_;
