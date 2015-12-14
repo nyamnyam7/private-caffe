@@ -7,11 +7,32 @@
 
 #include "caffe/layer.hpp"
 #include "caffe/layer_factory.hpp"
+#include "caffe/layers/conv_layer.hpp"
+#include "caffe/layers/lrn_layer.hpp"
+#include "caffe/layers/pooling_layer.hpp"
+#include "caffe/layers/relu_layer.hpp"
+#include "caffe/layers/sigmoid_layer.hpp"
+#include "caffe/layers/softmax_layer.hpp"
+#include "caffe/layers/tanh_layer.hpp"
+#include "caffe/layers/cos_layer.hpp"
+#include "caffe/layers/maxout_layer.hpp"
+#include "caffe/layers/onehot_layer.hpp"
+#include "caffe/layers/nms_layer.hpp"
 #include "caffe/proto/caffe.pb.h"
-#include "caffe/vision_layers.hpp"
+
+#ifdef USE_CUDNN
+#include "caffe/layers/cudnn_conv_layer.hpp"
+#include "caffe/layers/cudnn_lcn_layer.hpp"
+#include "caffe/layers/cudnn_lrn_layer.hpp"
+#include "caffe/layers/cudnn_pooling_layer.hpp"
+#include "caffe/layers/cudnn_relu_layer.hpp"
+#include "caffe/layers/cudnn_sigmoid_layer.hpp"
+#include "caffe/layers/cudnn_softmax_layer.hpp"
+#include "caffe/layers/cudnn_tanh_layer.hpp"
+#endif
 
 #ifdef WITH_PYTHON_LAYER
-#include "caffe/python_layer.hpp"
+#include "caffe/layers/python_layer.hpp"
 #endif
 
 namespace caffe {

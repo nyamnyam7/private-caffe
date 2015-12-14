@@ -8,7 +8,7 @@
 #include "caffe/lib_external.hpp"
 #include "caffe/layer.hpp"
 #include "caffe/util/io.hpp"
-#include "caffe/common_layers.hpp"
+#include "caffe/layers/libprocess_layer.hpp"
 
 namespace caffe {
 
