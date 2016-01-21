@@ -18,6 +18,7 @@
 #include "caffe/layers/maxout_layer.hpp"
 #include "caffe/layers/onehot_layer.hpp"
 #include "caffe/layers/nms_layer.hpp"
+#include "caffe/layers/custom_sigmoid_layer.hpp"
 #include "caffe/proto/caffe.pb.h"
 
 #ifdef USE_CUDNN
@@ -186,6 +187,23 @@ shared_ptr<Layer<Dtype> > GetSigmoidLayer(const LayerParameter& param) {
 }
 
 REGISTER_LAYER_CREATOR(Sigmoid, GetSigmoidLayer);
+
+
+// Get custom_sigmoid layer according to engine.
+template <typename Dtype>
+shared_ptr<Layer<Dtype> > GetCustomSigmoidLayer(const LayerParameter& param) {
+  CustomSigmoidParameter_Engine engine = param.custom_sigmoid_param().engine();
+  if (engine == CustomSigmoidParameter_Engine_DEFAULT) {
+    engine = CustomSigmoidParameter_Engine_CAFFE;
+  }
+  if (engine == CustomSigmoidParameter_Engine_CAFFE) {
+    return shared_ptr<Layer<Dtype> >(new CustomSigmoidLayer<Dtype>(param));
+  } else {
+    LOG(FATAL) << "Layer " << param.name() << " has unknown engine.";
+  }
+}
+
+REGISTER_LAYER_CREATOR(CustomSigmoid, GetCustomSigmoidLayer);
 
 
 // Get cos layer according to engine.

@@ -400,6 +400,7 @@ message LayerParameter {
   optional NMSParameter nms_param = 997;
   optional OnehotParameter onehot_param = 996;
   optional LibExternalParameter lib_external_param = 995;
+  optional CustomSigmoidParameter custom_sigmoid_param = 994;
 }
 
 // Message that stores parameters used to apply transformation
@@ -991,6 +992,17 @@ message SigmoidParameter {
   optional Engine engine = 1 [default = DEFAULT];
 }
 
+message CustomSigmoidParameter {
+  optional float min = 1 [default=0.0];
+  optional float max = 2 [default=1.0];
+
+  enum Engine {
+    DEFAULT = 0;
+    CAFFE = 1;
+  }
+  optional Engine engine = 3 [default = DEFAULT];
+}
+
 message CosParameter {
   enum Engine {
     DEFAULT = 0;
@@ -1220,6 +1232,7 @@ message V1LayerParameter {
   optional TransformationParameter transform_param = 36;
   optional LossParameter loss_param = 42;
   optional V0LayerParameter layer = 1;
+  optional CustomSigmoidParameter custom_sigmoid_param = 95;
   optional LibExternalParameter lib_external_param = 96;
   optional NMSParameter nms_param = 97;
   optional MaxoutParameter maxout_param = 98;
