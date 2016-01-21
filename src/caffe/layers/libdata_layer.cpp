@@ -34,6 +34,8 @@ void LibDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
   batch_size_ = this->layer_param_.lib_external_param().batch_size();
   pos_ = 0;
 
+  CHECK (libpath_ != "");
+      
   libhandle_ = dlopen(libpath_.c_str(), RTLD_LAZY);
   if (!libhandle_) fputs(dlerror(), stderr);
   CHECK(libhandle_);

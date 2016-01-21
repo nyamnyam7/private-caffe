@@ -99,10 +99,18 @@ void EltwiseLayer<Dtype>::Forward_cpu(
       }
       break;
     case EltwiseParameter_EltwiseOp_SUM:
-      caffe_set(count, Dtype(0), top_data);
-      // TODO(shelhamer) does BLAS optimize to sum for coeff = 1?
-      for (int i = 0; i < bottom.size(); ++i) {
-        caffe_axpy(count, coeffs_[i], bottom[i]->cpu_data(), top_data);
+      if (coeffs_[0]==1.0) {
+        caffe_copy(count, bottom[0]->cpu_data(), top_data);
+      } else {
+        caffe_set(count, Dtype(0.), top_data);
+        caffe_axpy(count, coeffs_[0], bottom[0]->cpu_data(), top_data);
+      }
+
+      for (int i = 1; i < bottom.size(); ++i) {
+        if (coeffs_[i]==1.0)
+          caffe_add (count, top_data, bottom[i]->cpu_data(), top_data);
+        else
+          caffe_axpy(count, coeffs_[i], bottom[i]->cpu_data(), top_data);
       }
       break;
     case EltwiseParameter_EltwiseOp_MAX:
