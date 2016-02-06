@@ -13,8 +13,8 @@ void CustomSigmoidLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
 }
 
 template <typename Dtype>
-inline Dtype custom_sigmoid(Dtype x, const Dtype min, const Dtype diff) {
-  return min + diff / (1. + exp(-x));
+inline Dtype sigmoid(Dtype x) {
+  return 1. / (1. + exp(-x));
 }
 
 template <typename Dtype>
@@ -22,10 +22,12 @@ void CustomSigmoidLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     const vector<Blob<Dtype>*>& top) {
   const Dtype* bottom_data = bottom[0]->cpu_data();
   Dtype* top_data = top[0]->mutable_cpu_data();
-  Dtype diff = max_ - min_;
+  const Dtype diff = max_ - min_;
+  const Dtype min = min_;
   const int count = bottom[0]->count();
-  for (int i = 0; i < count; ++i) {
-    top_data[i] = custom_sigmoid(bottom_data[i], min_, diff);
+  #pragma omp parallel for
+  for (int i=0; i<count; ++i) {
+    top_data[i] = min + diff * sigmoid(bottom_data[i]);
   }
 }
 

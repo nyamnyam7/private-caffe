@@ -401,6 +401,8 @@ message LayerParameter {
   optional OnehotParameter onehot_param = 996;
   optional LibExternalParameter lib_external_param = 995;
   optional CustomSigmoidParameter custom_sigmoid_param = 994;
+  optional VariableParameter variable_param = 993;
+  optional ImagePreprocessingParameter imgproc_param = 992;
 }
 
 // Message that stores parameters used to apply transformation
@@ -488,6 +490,10 @@ message ArgMaxParameter {
   // By default ArgMaxLayer maximizes over the flattened trailing dimensions
   // for each index of the first / num dimension.
   optional int32 axis = 3;
+}
+
+message ImagePreprocessingParameter{
+  optional string method = 1 [default = ""];
 }
 
 message ConcatParameter {
@@ -983,6 +989,13 @@ message ReshapeParameter {
   optional int32 num_axes = 3 [default = -1];
 }
 
+
+message VariableParameter {
+  optional BlobShape shape = 1;
+  optional FillerParameter filler = 2; // The filler for the weight
+}
+
+
 message SigmoidParameter {
   enum Engine {
     DEFAULT = 0;
@@ -1188,7 +1201,7 @@ message V1LayerParameter {
     NMS = 97;
     MAXOUT = 98;
     COS = 99;
-
+    VARIABLE = 93;
   }
   optional LayerType type = 5;
   repeated BlobProto blobs = 6;
@@ -1232,6 +1245,7 @@ message V1LayerParameter {
   optional TransformationParameter transform_param = 36;
   optional LossParameter loss_param = 42;
   optional V0LayerParameter layer = 1;
+  optional VariableParameter variable_param=94;
   optional CustomSigmoidParameter custom_sigmoid_param = 95;
   optional LibExternalParameter lib_external_param = 96;
   optional NMSParameter nms_param = 97;
