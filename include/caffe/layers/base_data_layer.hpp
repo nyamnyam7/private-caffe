@@ -86,6 +86,7 @@ template <typename Dtype>
 class ExtendedBatch {
   public:
     std::vector< Blob<Dtype>* > data_;
+    void* userdata_;
 };
 
 template <typename Dtype>

@@ -47,18 +47,20 @@ void LibDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
       CHECK(!errstr);
   }
   memset(&iface_, 0, sizeof(iface_));
-  libuserdata_ = NULL;
-  initfunc_(&iface_, &libuserdata_, libparam_);
+
+  for (int i=0; i< this->PREFETCH_COUNT; i++)
+    initfunc_(&iface_, &this->prefetch_[i].userdata_, libparam_);
 
   num_blobs_ = top.size();
 
-  for (int i=0; i<num_blobs_; i++) {
-    std::vector<int> shape;
-    iface_.get_shape(libuserdata_, i, batch_size_, shape);
-    shape[0] = batch_size_;
-    top[i]->Reshape(shape);
-    for (int j=0; j< this->PREFETCH_COUNT; ++j)
-      this->prefetch_[j].data_[i]->Reshape(shape);
+  for (int i=0; i< this->PREFETCH_COUNT; ++i) {
+    for (int j=0; j<num_blobs_; ++j) {
+      std::vector<int> shape;
+      iface_.get_shape(this->prefetch_[i].userdata_, j, batch_size_, shape);
+      shape[0] = batch_size_;
+      this->prefetch_[i].data_[j]->Reshape(shape);
+      if (i==0) top[j]->Reshape(shape);
+    }
   }
 }
 
@@ -66,12 +68,20 @@ void LibDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
 template<typename Dtype>
 void LibDataLayer<Dtype>::load_batch(ExtendedBatch<Dtype>* batch) {
   CHECK(batch->data_[0]->count());
-  iface_.reset(libuserdata_, pos_); 
+  size_t curpos;
+
+  #pragma omp critical
+  {
+    curpos = pos_;
+    pos_ += batch_size_;
+  }
+
+  iface_.reset(batch->userdata_, curpos); 
   for (int i=0; i<batch->data_.size(); i++) {
     Dtype* top_data = batch->data_[i]->mutable_cpu_data();
-    iface_.fill(libuserdata_, i, pos_, batch->data_[i]->shape(), top_data);
+    iface_.fill(batch->userdata_, i, curpos, batch->data_[i]->shape(), top_data);
   }
-  pos_ += batch_size_;
+
 }
 
 

@@ -47,7 +47,6 @@ class LibDataLayer : public BaseExtendedPrefetchingDataLayer<Dtype> {
   std::string libparam_;
 
   void* libhandle_;
-  void* libuserdata_;
   DataInitFunction initfunc_;
   LibDataInterface iface_;
 
