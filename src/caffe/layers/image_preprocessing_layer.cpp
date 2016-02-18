@@ -54,36 +54,55 @@ static void affine(cv::Mat& input_img, cv::Mat& output_img)
 
   Mat warp_dst;
   warp_dst = Mat::zeros(input_img.rows, input_img.cols, input_img.type());
-  Mat rot_mat(2, 3, CV_32FC1);
-  Mat warp_mat(2, 3, CV_32FC1);
+  Point2f srcQuad[4];
+  Point2f dstQuad[4];
 
-  //Random translation
-  Point2f srcTri[3];
-  Point2f dstTri[3];
+  float x = (-10 + (21 * rand() / (RAND_MAX + 1.0))) / 100.0 * 48;
+  float y = (-10 + (21 * rand() / (RAND_MAX + 1.0))) / 100.0 * 48;
 
-  srcTri[0] = Point2f(0, 0);
-  srcTri[1] = Point2f(input_img.cols - 1, 0);
-  srcTri[2] = Point2f(0, input_img.rows - 1);
+  if (x >= 0){
+	if (y >= 0)
+	{
+		srcQuad[0] = Point2f(x, y);
+		srcQuad[1] = Point2f(input_img.cols-1, y);
+		srcQuad[2] = Point2f(x, input_img.rows - 1);
+		srcQuad[3] = Point2f(input_img.cols - 1, input_img.rows - 1);
+	}
+	else
+	{
+		srcQuad[0] = Point2f(x, 0);
+		srcQuad[1] = Point2f(input_img.cols - 1, 0);
+		srcQuad[2] = Point2f(x, input_img.rows + y);
+		srcQuad[3] = Point2f(input_img.cols - 1, input_img.rows + y);
+	}
+  }
+  else
+  {
+	if (y >= 0)
+	{
+		srcQuad[0] = Point2f(0, y);
+		srcQuad[1] = Point2f(input_img.cols + x, y);
+		srcQuad[2] = Point2f(0, input_img.rows - 1);
+		srcQuad[3] = Point2f(input_img.cols + x, input_img.rows - 1);
+	}
+	else
+	{
+		srcQuad[0] = Point2f(0, 0);
+		srcQuad[1] = Point2f(input_img.cols + x, 0);
+		srcQuad[2] = Point2f(0, input_img.rows + y);
+		srcQuad[3] = Point2f(input_img.cols + x, input_img.rows + y);
+	}
+  }
 
-  float x = (-10 + (21 * rand() / (RAND_MAX + 1.0))) / 100.0;
-  float y = (-10 + (21 * rand() / (RAND_MAX + 1.0))) / 100.0;
+  dstQuad[0] = Point2f(0, 0);
+  dstQuad[1] = Point2f(input_img.cols - 1, 0);
+  dstQuad[2] = Point2f(0, input_img.rows - 1);
+  dstQuad[3] = Point2f(input_img.cols - 1, input_img.rows - 1);
 
-  dstTri[0] = Point2f(input_img.cols*x, input_img.rows*y);
-  dstTri[1] = Point2f(input_img.cols*(1.0 + x), input_img.rows*y);
-  dstTri[2] = Point2f(input_img.cols*x, input_img.rows*(1.0 + y));
-
-  warp_mat = getAffineTransform(srcTri, dstTri);
-  warpAffine(input_img, warp_dst, warp_mat, warp_dst.size());
-
-  //Random rotation and scaling
-  Point center = Point(warp_dst.cols / 2, warp_dst.rows / 2);
-  double angle = -5 + (11 * rand() / (RAND_MAX + 1.0));
-  double scale = (9 + (3 * rand() / (RAND_MAX + 1.0))) / 10.0;
-
-  rot_mat = getRotationMatrix2D(center, angle, scale);
-  warpAffine(warp_dst, output_img, rot_mat, warp_dst.size());
+  Mat trans_mat(2, 4, CV_32FC1);
+  trans_mat = getPerspectiveTransform(srcQuad, dstQuad);
+  warpPerspective(input_img, output_img, trans_mat, Size(48, 48));
 }
-
 
 template <typename Dtype>
 void ImagePreprocessingLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
