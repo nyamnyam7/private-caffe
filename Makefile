@@ -365,10 +365,10 @@ BLAS ?= atlas
 ifeq ($(BLAS), mkl)
 	# MKL
 	LIBRARIES += mkl_rt
-	COMMON_FLAGS += -DUSE_MKL 
-	MKL_DIR ?= /opt/intel/mkl
-	BLAS_INCLUDE ?= $(MKL_DIR)/include
-	BLAS_LIB ?= $(MKL_DIR)/lib $(MKL_DIR)/lib/intel64
+	COMMON_FLAGS += -DUSE_MKL
+	MKLROOT ?= /opt/intel/mkl
+	BLAS_INCLUDE ?= $(MKLROOT)/include
+	BLAS_LIB ?= $(MKLROOT)/lib $(MKLROOT)/lib/intel64
 else ifeq ($(BLAS), open)
 	# OpenBLAS
 	LIBRARIES += openblas
