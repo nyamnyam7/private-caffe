@@ -404,6 +404,7 @@ CXXFLAGS += -MMD -MP
 
 # openmp support
 CXXFLAGS += -fopenmp -pthread
+LINKFLAGS += -fopenmp
 
 # Complete build flags.
 COMMON_FLAGS += $(foreach includedir,$(INCLUDE_DIRS),-I$(includedir))

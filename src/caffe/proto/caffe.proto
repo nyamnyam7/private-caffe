@@ -408,6 +408,7 @@ message LayerParameter {
   optional CustomSigmoidParameter custom_sigmoid_param = 994;
   optional VariableParameter variable_param = 993;
   optional ImagePreprocessingParameter imgproc_param = 992;
+  optional NoiseParameter noise_param = 991;
 }
 
 // Message that stores parameters used to apply transformation
@@ -675,6 +676,14 @@ message DataParameter {
 
 message DropoutParameter {
   optional float dropout_ratio = 1 [default = 0.5]; // dropout ratio
+}
+
+message NoiseParameter {
+  optional string type = 1 [default = 'gaussian'];
+  optional float p01 = 2 [default = 0]; // paramter 1 for the distribution
+  optional float p02 = 3 [default = 0]; // parameter 2 for the distribution 
+  optional float p03 = 4 [default = 0]; // parameter 3 for the distribution 
+  optional float p04 = 5 [default = 0]; // parameter 4 for the distribution 
 }
 
 // DummyDataLayer fills any number of arbitrarily shaped blobs with random
