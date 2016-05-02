@@ -257,6 +257,10 @@ BOOST_PYTHON_MODULE(_caffe) {
     .def("save", &Net_Save);
   bp::register_ptr_to_python<shared_ptr<Net<Dtype> > >();
 
+  // Fix for caffe pythonwrapper for boost 1.6
+  boost::python::register_ptr_to_python<boost::shared_ptr<Blob<Dtype> > >();
+  // End fix
+
   bp::class_<Blob<Dtype>, shared_ptr<Blob<Dtype> >, boost::noncopyable>(
     "Blob", bp::no_init)
     .add_property("shape",
