@@ -414,6 +414,7 @@ message LayerParameter {
   optional VariableParameter variable_param = 993;
   optional ImagePreprocessingParameter imgproc_param = 992;
   optional NoiseParameter noise_param = 991;
+  optional LogGaussianParameter log_gaussian_param = 990;
 }
 
 // Message that stores parameters used to apply transformation
@@ -848,6 +849,12 @@ message InnerProductParameter {
   // of the weight matrix. The weight matrix itself is not going to be transposed
   // but rather the transfer flag of operations will be toggled accordingly.
   optional bool transpose = 6 [default = false];
+}
+
+message LogGaussianParameter {
+  optional uint32 num_output = 1; // The number of outputs for the layer
+  optional FillerParameter weight_filler = 2; // The filler for the weight
+  optional FillerParameter sigma_filler = 3; // The filler for sigma (sigma of an isotropic gaussian)
 }
 
 message InputParameter {
@@ -1371,6 +1378,7 @@ message V1LayerParameter {
   optional TransformationParameter transform_param = 36;
   optional LossParameter loss_param = 42;
   optional V0LayerParameter layer = 1;
+  optional LogGaussianParameter log_gaussian_param = 93;
   optional VariableParameter variable_param=94;
   optional CustomSigmoidParameter custom_sigmoid_param = 95;
   optional LibExternalParameter lib_external_param = 96;
