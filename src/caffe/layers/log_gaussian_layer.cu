@@ -15,18 +15,19 @@ void LogGaussianLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
   if (M_ == 1) {
     caffe_gpu_gemv<Dtype>(CblasNoTrans, N_, K_, (Dtype)1.,
                          weight, bottom_data, (Dtype)0., top_data);
-    if (bias_term_)
+    /*if (bias_term_)
       caffe_gpu_axpy<Dtype>(N_, bias_multiplier_.cpu_data()[0],
-                            this->blobs_[1]->gpu_data(), top_data);
+                            this->blobs_[1]->gpu_data(), top_data);*/
   } else {
     caffe_gpu_gemm<Dtype>(CblasNoTrans,
                           transpose_ ? CblasNoTrans : CblasTrans,
                           M_, N_, K_, (Dtype)1.,
                           bottom_data, weight, (Dtype)0., top_data);
-    if (bias_term_)
+    /* if (bias_term_)
       caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, M_, N_, 1, (Dtype)1.,
                             bias_multiplier_.gpu_data(),
                             this->blobs_[1]->gpu_data(), (Dtype)1., top_data);
+                            */
   }
 }
 
@@ -50,6 +51,7 @@ void LogGaussianLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
           (Dtype)1., this->blobs_[0]->mutable_gpu_diff());
     }
   }
+  /*
   if (bias_term_ && this->param_propagate_down_[1]) {
     const Dtype* top_diff = top[0]->gpu_diff();
     // Gradient with respect to bias
@@ -57,6 +59,7 @@ void LogGaussianLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
         bias_multiplier_.gpu_data(), (Dtype)1.,
         this->blobs_[1]->mutable_gpu_diff());
   }
+  */
   if (propagate_down[0]) {
     const Dtype* top_diff = top[0]->gpu_diff();
     // Gradient with respect to bottom data

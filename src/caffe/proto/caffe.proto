@@ -182,6 +182,7 @@ message SolverParameter {
   optional string regularization_type = 29 [default = "L2"];
   // the stepsize for learning rate policy "step"
   optional int32 stepsize = 13;
+  optional int32 stepreset = 41 [default = 0];
   // the stepsize for learning rate policy "multistep"
   repeated int32 stepvalue = 34;
 
@@ -230,6 +231,8 @@ message SolverParameter {
 
   // If false, don't save a snapshot after training finishes.
   optional bool snapshot_after_train = 28 [default = true];
+
+  optional string log_path = 42 [default = ""];
 
   // DEPRECATED: old solver enum types, use string instead
   enum SolverType {

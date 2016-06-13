@@ -31,8 +31,22 @@ Dtype SGDSolver<Dtype>::GetLearningRate() {
     rate = this->param_.base_lr();
   } else if (lr_policy == "step") {
     this->current_step_ = this->iter_ / this->param_.stepsize();
+    if (this->param_.stepreset() > 0) this->current_step_ = this->current_step_ % this->param_.stepreset();
     rate = this->param_.base_lr() *
         pow(this->param_.gamma(), this->current_step_);
+#ifdef DSP_LOSS
+  } else if (lr_policy == "autostep") {
+    if (this->iter_ / this->param_.stepsize() > 1 && this->iter_ % this->param_.stepsize() == 0) {
+	  int idx = this->trloss_stack.size() - 1;
+      double loss1 = 0, loss2 = 0;
+	  while (this->trloss_stack[idx].iter > this->iter_ - this->param_.stepsize()) loss1 += this->trloss_stack[idx--].loss[0];
+	  while (this->trloss_stack[idx].iter > this->iter_ - this->param_.stepsize() * 2) loss2 += this->trloss_stack[idx--].loss[0];
+      if (loss1 >= loss2 * 0.99) this->current_step_++;
+    }
+	if (this->param_.stepreset() > 0) this->current_step_ = this->current_step_ % this->param_.stepreset();
+    rate = this->param_.base_lr() *
+        pow(this->param_.gamma(), this->current_step_);
+#endif
   } else if (lr_policy == "exp") {
     rate = this->param_.base_lr() * pow(this->param_.gamma(), this->iter_);
   } else if (lr_policy == "inv") {
@@ -112,6 +126,9 @@ void SGDSolver<Dtype>::ApplyUpdate() {
     Regularize(param_id);
     ComputeUpdateValue(param_id, rate);
   }
+#ifdef DSP_LOSS
+  this->cur_lr = rate;
+#endif
   this->net_->Update();
 }
 
